@@ -1,5 +1,7 @@
 services:
+  # Bundled Postgres. Only started with `--profile local-db`; skip it when DATABASE_URL points at Supabase.
   db:
+    profiles: ["local-db"]
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -19,8 +21,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+        required: false   # Docker Compose 2.20+; lets the backend start without the local-db profile
     environment:
       NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:-}   # Supabase connection string; empty = use the bundled db below
       DB_HOST: db
       DB_USER: dares
       DB_PASSWORD: ${DB_PASSWORD:-change-me}

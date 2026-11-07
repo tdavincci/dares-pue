@@ -23,8 +23,9 @@ this system, and the system exposes the data to **Odyssey Energy Solutions** thr
 ## 1. Quick start (Docker)
 
 ```bash
-cp backend/.env.example .env      # optional: set DB_PASSWORD, JWT_SECRET, ADMIN_PASSWORD, PUBLIC_URL
-docker compose up -d --build
+cp backend/.env.example .env      # set DATABASE_URL (Supabase), JWT_SECRET, ADMIN_PASSWORD, PUBLIC_URL
+docker compose up -d --build                        # with Supabase (DATABASE_URL set)
+docker compose --profile local-db up -d --build     # or: bundled Postgres container (set DB_PASSWORD)
 ```
 
 * Admin portal: <http://localhost:8080>. Sign in as `admin@dares-pue.local` / `ChangeMe123!` and **change the password**.
@@ -34,8 +35,26 @@ docker compose up -d --build
 
 ## 2. Local development
 
+### Database: Supabase (no local Postgres needed)
+
+1. Create a project at <https://supabase.com> and note the database password.
+2. In the project, click **Connect** and copy the **Session pooler** connection string (port 5432). The "Direct
+   connection" is IPv6-only and fails on most home/office networks; the transaction pooler (port 6543) is not
+   recommended because migrations rely on session features.
+3. Put it in `backend/.env` with the password filled in:
+   `DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres`
+   (URL-encode special characters in the password, e.g. `@` → `%40`). Remove any `DB_SSL=false` line.
+4. Start the backend. Migrations create all tables on first boot; check them in Supabase → Table Editor.
+
+The app talks to Supabase only as a plain PostgreSQL database (TypeORM). Supabase Auth, Storage and its auto REST API
+are not used. Because the tables live in the `public` schema, a migration enables Row Level Security on all of them
+with no policies, which blocks Supabase's anon/authenticated Data API roles. The backend connects as the table owner
+and is not affected. You can also turn the Data API off in the project settings.
+
+### Run
+
 ```bash
-# PostgreSQL 14+ running locally, database "dares_pue"
+# DATABASE_URL (Supabase) or a local PostgreSQL 14+ with database "dares_pue"
 cd backend && cp .env.example .env && npm install && npm run start:dev      # http://localhost:3000
 cd frontend && npm install && npx ng serve                                  # http://localhost:4200 (proxies /api → :3000)
 ```
@@ -165,6 +184,7 @@ All settings are documented in `backend/.env.example`. The important ones for pr
 
 * `JWT_SECRET`: set a long random value.
 * `ADMIN_PASSWORD`: seeded only when there are no users yet.
+* `DATABASE_URL`: Supabase/hosted Postgres connection string (overrides the `DB_HOST`… settings, SSL on by default).
 * `DB_SYNC=false`: use migrations.
 * `CORS_ORIGINS`: the portal URL, if it is served from a different origin.
 * `GT06_PORT`, `ONLINE_THRESHOLD_MINUTES`, `DEFAULT_GEOFENCE_RADIUS_METERS`, `ODYSSEY_READING_INTERVAL_MINUTES`

@@ -1,4 +1,6 @@
 import 'reflect-metadata';
+// Lets the TypeORM CLI (migration:run etc.) read backend/.env too. Never overrides variables already set.
+import 'dotenv/config';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import configuration from '../config/configuration';
 import { ApiAccessToken, ApiClient } from '../api-clients/api-client.entity';
@@ -12,14 +14,26 @@ export const ENTITIES = [User, Farmer, Device, LocationPing, Payment, ApiClient,
 
 export function buildDataSourceOptions(): DataSourceOptions {
   const { db } = configuration();
+  if (db.url && !/^postgres(ql)?:\/\//i.test(db.url)) {
+    throw new Error(
+      'DATABASE_URL must be a PostgreSQL connection string (postgresql://user:password@host:5432/db). ' +
+        'For Supabase use Connect → "Session pooler", not the https://<ref>.supabase.co project URL.',
+    );
+  }
+  const connection = db.url
+    ? { url: db.url }
+    : {
+        host: db.host,
+        port: db.port,
+        username: db.username,
+        password: db.password,
+        database: db.database,
+      };
   return {
     type: 'postgres',
-    host: db.host,
-    port: db.port,
-    username: db.username,
-    password: db.password,
-    database: db.database,
+    ...connection,
     ssl: db.ssl ? { rejectUnauthorized: false } : false,
+    extra: { max: db.poolMax },
     entities: ENTITIES,
     // ts-node (CLI) loads .ts sources; the compiled app loads .js (never .d.ts).
     migrations: [__dirname + (__filename.endsWith('.ts') ? '/migrations/*.ts' : '/migrations/*.js')],

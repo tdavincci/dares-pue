@@ -14,12 +14,19 @@ export default () => ({
     .filter(Boolean),
 
   db: {
+    /**
+     * Full connection string (e.g. Supabase). When set it takes precedence over DB_HOST/PORT/USER/PASSWORD/NAME,
+     * and SSL is on by default.
+     */
+    url: process.env.DATABASE_URL?.trim() || undefined,
     host: process.env.DB_HOST ?? 'localhost',
     port: int(process.env.DB_PORT, 5432),
     username: process.env.DB_USER ?? 'postgres',
     password: process.env.DB_PASSWORD ?? 'postgres',
     database: process.env.DB_NAME ?? 'dares_pue',
-    ssl: bool(process.env.DB_SSL, false),
+    ssl: bool(process.env.DB_SSL, !!process.env.DATABASE_URL?.trim()),
+    /** Max connections in the pool. Keep it small on Supabase's free tier pooler. */
+    poolMax: int(process.env.DB_POOL_MAX, 10),
     synchronize: bool(process.env.DB_SYNC, false),
     runMigrations: bool(process.env.DB_RUN_MIGRATIONS, true),
     logging: bool(process.env.DB_LOGGING, false),
