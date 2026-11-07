@@ -1,0 +1,179 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { haversineMeters, isValidCoordinate } from '../common/utils/geo';
+import { sha256 } from '../common/utils/crypto';
+import { Device, DeviceStatus } from '../devices/device.entity';
+import { LocationPing, LocationSource } from './location-ping.entity';
+
+export interface IncomingFix {
+  recordedAt: Date;
+  latitude: number;
+  longitude: number;
+  speedKph?: number | null;
+  course?: number | null;
+  altitude?: number | null;
+  satellites?: number | null;
+  gpsValid?: boolean;
+  batteryLevel?: number | null;
+}
+
+export type RecordResult =
+  | { stored: true; pingId: string; withinGeofence: boolean | null; distanceFromFarmMeters: number | null }
+  | {
+      stored: false;
+      reason: 'invalid_coordinates' | 'no_fix' | 'duplicate' | 'future_timestamp' | 'device_decommissioned';
+    };
+
+export interface UnknownTracker {
+  imei: string;
+  source: LocationSource;
+  remoteAddress?: string;
+  firstSeenAt: Date;
+  lastSeenAt: Date;
+  attempts: number;
+}
+
+/** Central write path for tracker positions: validation, geofence verdict, last-known state. */
+@Injectable()
+export class LocationsService {
+  private readonly logger = new Logger(LocationsService.name);
+  private readonly unknown = new Map<string, UnknownTracker>();
+
+  constructor(
+    @InjectRepository(LocationPing) private readonly pings: Repository<LocationPing>,
+    @InjectRepository(Device) private readonly devices: Repository<Device>,
+  ) {}
+
+  findDeviceByImei(imei: string) {
+    return this.devices.findOne({ where: { trackerImei: imei }, relations: { farmer: true } });
+  }
+
+  async findDeviceByIngestKey(key: string) {
+    return this.devices
+      .createQueryBuilder('d')
+      .leftJoinAndSelect('d.farmer', 'f')
+      .where('d.ingestKeyHash = :h', { h: sha256(key) })
+      .getOne();
+  }
+
+  async verifyIngestKey(deviceId: string, key: string | undefined): Promise<boolean> {
+    if (!key) return false;
+    const d = await this.devices
+      .createQueryBuilder('d')
+      .addSelect('d.ingestKeyHash')
+      .where('d.id = :id', { id: deviceId })
+      .getOne();
+    return !!d?.ingestKeyHash && d.ingestKeyHash === sha256(key);
+  }
+
+  /** Remember IMEIs that talk to us but are not registered, so admins can register them. */
+  noteUnknown(imei: string, source: LocationSource, remoteAddress?: string) {
+    const now = new Date();
+    const prev = this.unknown.get(imei);
+    if (prev) {
+      prev.lastSeenAt = now;
+      prev.attempts++;
+      prev.remoteAddress = remoteAddress ?? prev.remoteAddress;
+    } else {
+      this.unknown.set(imei, { imei, source, remoteAddress, firstSeenAt: now, lastSeenAt: now, attempts: 1 });
+      this.logger.warn(`Unregistered tracker ${imei} via ${source}${remoteAddress ? ` from ${remoteAddress}` : ''}`);
+    }
+    if (this.unknown.size > 1000) {
+      const oldest = [...this.unknown.values()].sort((a, b) => +a.lastSeenAt - +b.lastSeenAt)[0];
+      this.unknown.delete(oldest.imei);
+    }
+  }
+
+  listUnknown() {
+    return [...this.unknown.values()].sort((a, b) => +b.lastSeenAt - +a.lastSeenAt);
+  }
+
+  forgetUnknown(imei: string) {
+    this.unknown.delete(imei);
+  }
+
+  /** Mark a device as seen (heartbeat) without a position. */
+  async touch(device: Device, batteryLevel?: number | null) {
+    const patch: Partial<Device> = { lastSeenAt: new Date() };
+    if (batteryLevel !== undefined && batteryLevel !== null) patch.lastBatteryLevel = batteryLevel;
+    await this.devices.update(device.id, patch);
+  }
+
+  async record(device: Device, fix: IncomingFix, source: LocationSource): Promise<RecordResult> {
+    if (device.status === DeviceStatus.DECOMMISSIONED) return { stored: false, reason: 'device_decommissioned' };
+    if (!isValidCoordinate(fix.latitude, fix.longitude)) return { stored: false, reason: 'invalid_coordinates' };
+    if (fix.gpsValid === false) {
+      // No GPS lock: the coordinates are the last cached fix. Keep the device "seen" but don't store.
+      await this.touch(device, fix.batteryLevel);
+      return { stored: false, reason: 'no_fix' };
+    }
+    const now = Date.now();
+    if (fix.recordedAt.getTime() > now + 10 * 60_000) return { stored: false, reason: 'future_timestamp' };
+
+    let distance: number | null = null;
+    let within: boolean | null = null;
+    const farm = device.farmer;
+    if (farm && farm.farmLatitude !== null && farm.farmLongitude !== null) {
+      distance = Math.round(haversineMeters(farm.farmLatitude, farm.farmLongitude, fix.latitude, fix.longitude));
+      within = distance <= device.geofenceRadiusMeters;
+    }
+
+    const insert = await this.pings
+      .createQueryBuilder()
+      .insert()
+      .into(LocationPing)
+      .values({
+        deviceId: device.id,
+        recordedAt: fix.recordedAt,
+        latitude: fix.latitude,
+        longitude: fix.longitude,
+        speedKph: fix.speedKph ?? null,
+        course: fix.course ?? null,
+        altitude: fix.altitude ?? null,
+        satellites: fix.satellites ?? null,
+        gpsValid: true,
+        batteryLevel: fix.batteryLevel ?? null,
+        source,
+        distanceFromFarmMeters: distance,
+        withinGeofence: within,
+      })
+      .orIgnore()
+      .returning(['id'])
+      .execute();
+
+    const id = insert.raw?.[0]?.id as string | undefined;
+    if (!id) return { stored: false, reason: 'duplicate' };
+
+    // Only move the "last known" position forward in time (trackers flush buffered points out of order).
+    await this.devices
+      .createQueryBuilder()
+      .update(Device)
+      .set({
+        lastSeenAt: () => 'now()',
+        lastFixAt: fix.recordedAt,
+        lastLatitude: fix.latitude,
+        lastLongitude: fix.longitude,
+        lastSpeedKph: fix.speedKph ?? null,
+        lastDistanceFromFarmMeters: distance,
+        lastWithinGeofence: within,
+        ...(fix.batteryLevel !== undefined && fix.batteryLevel !== null ? { lastBatteryLevel: fix.batteryLevel } : {}),
+      })
+      .where('id = :id', { id: device.id })
+      .andWhere('(last_fix_at IS NULL OR last_fix_at <= :t)', { t: fix.recordedAt })
+      .execute();
+    await this.devices
+      .createQueryBuilder()
+      .update(Device)
+      .set({ lastSeenAt: () => 'now()' })
+      .where('id = :id', { id: device.id })
+      .execute();
+
+    if (within === false) {
+      this.logger.warn(
+        `Device ${device.serialNumber} is ${distance} m from its farm (limit ${device.geofenceRadiusMeters} m)`,
+      );
+    }
+    return { stored: true, pingId: String(id), withinGeofence: within, distanceFromFarmMeters: distance };
+  }
+}

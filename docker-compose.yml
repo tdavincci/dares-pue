@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dares_pue
+      POSTGRES_USER: dares
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change-me}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dares -d dares_pue"]
+      interval: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DB_HOST: db
+      DB_USER: dares
+      DB_PASSWORD: ${DB_PASSWORD:-change-me}
+      DB_NAME: dares_pue
+      JWT_SECRET: ${JWT_SECRET:-replace-me}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@dares-pue.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-ChangeMe123!}
+      CORS_ORIGINS: ${PUBLIC_URL:-http://localhost:8080}
+    ports:
+      - "5023:5023"   # GT06 trackers connect here (open this TCP port on the firewall)
+      - "3000:3000"   # optional: direct API access
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on: [backend]
+    ports:
+      - "8080:80"
+
+volumes:
+  pgdata:
