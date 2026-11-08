@@ -4,6 +4,8 @@ import {
   crc16x25,
   decodeGps,
   decodeLoginImei,
+  batteryPercentFromVolts,
+  decodeHeartbeat2,
   decodeStatus,
   encodeGps,
   encodeLogin,
@@ -66,5 +68,29 @@ describe('GT06 codec', () => {
     const f = buildFrame(0x13, Buffer.from([0x46, 0x05, 0x04, 0x00, 0x02]), 3);
     f[5] ^= 0xff;
     expect(extractFrames(f).frames[0].crcOk).toBe(false);
+  });
+});
+
+describe('battery decoding', () => {
+  it('reads the 0x23 heartbeat as a voltage, not a 0–6 level', () => {
+    // terminal info 0x44, 4.05 V (0x0195), GSM 4, language 0x0002
+    const st = decodeHeartbeat2(Buffer.from([0x44, 0x01, 0x95, 0x04, 0x00, 0x02]));
+    expect(st.voltage).toBe(4.05);
+    expect(st.batteryLevel).toBe(86);
+    // the old decoder misread this packet as level 1 = 5%
+    expect(decodeStatus(Buffer.from([0x44, 0x01, 0x95, 0x04, 0x00, 0x02])).batteryLevel).toBe(5);
+  });
+
+  it('ignores implausible 0x23 voltages', () => {
+    expect(decodeHeartbeat2(Buffer.from([0x44, 0x00, 0x05, 0x04, 0x00, 0x02])).batteryLevel).toBeNull();
+  });
+
+  it.each([
+    [3.3, 0],
+    [3.8, 50],
+    [4.2, 100],
+    [4.35, 100],
+  ])('%d V -> %d%%', (v, pct) => {
+    expect(batteryPercentFromVolts(v)).toBe(pct);
   });
 });

@@ -9,6 +9,7 @@ import {
   decodeAlarmStatus,
   decodeGps,
   decodeLoginImei,
+  decodeHeartbeat2,
   decodeStatus,
   extractFrames,
   Gt06Frame,
@@ -145,8 +146,9 @@ export class Gt06Server implements OnModuleInit, OnApplicationShutdown {
     if (!device) return; // not logged in, or unknown tracker — ACK anyway so it keeps the line up
 
     if (f.protocol === Gt06Proto.STATUS || f.protocol === Gt06Proto.HEARTBEAT_2) {
-      const st = decodeStatus(f.content);
-      s.battery = st.batteryLevel;
+      // 0x13 carries a 0–6 voltage level; 0x23 carries the battery voltage itself.
+      const st = f.protocol === Gt06Proto.HEARTBEAT_2 ? decodeHeartbeat2(f.content) : decodeStatus(f.content);
+      if (st.batteryLevel !== null) s.battery = st.batteryLevel;
       await this.locations.touch(device, st.batteryLevel);
       return;
     }

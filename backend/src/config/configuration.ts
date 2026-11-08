@@ -61,6 +61,8 @@ export default () => ({
   tracking: {
     onlineThresholdMinutes: int(process.env.ONLINE_THRESHOLD_MINUTES, 30),
     defaultGeofenceRadiusMeters: int(process.env.DEFAULT_GEOFENCE_RADIUS_METERS, 500),
+    /** GPS speeds below this (km/h) are stored as 0: stationary GPS drift, not movement. 0 = keep raw speed. */
+    stationarySpeedKph: int(process.env.STATIONARY_SPEED_KPH, 5),
     gt06Enabled: bool(process.env.GT06_ENABLED, true),
     gt06Port: int(process.env.GT06_PORT, 5023),
     /** Minutes to add to the GT06 device clock to get UTC (most units already send UTC). */

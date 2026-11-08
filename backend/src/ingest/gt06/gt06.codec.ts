@@ -202,6 +202,53 @@ export function decodeStatus(content: Buffer): Gt06Status {
   };
 }
 
+/**
+ * Approximate state of charge of a single-cell Li-ion tracker battery from its voltage.
+ * Points are [volts, percent]; values in between are interpolated linearly.
+ */
+const LI_ION_CURVE: [number, number][] = [
+  [3.4, 0],
+  [3.6, 10],
+  [3.7, 30],
+  [3.8, 50],
+  [3.9, 65],
+  [4.0, 80],
+  [4.1, 92],
+  [4.2, 100],
+];
+
+export function batteryPercentFromVolts(v: number): number {
+  if (v <= LI_ION_CURVE[0][0]) return 0;
+  for (let i = 1; i < LI_ION_CURVE.length; i++) {
+    const [v1, p1] = LI_ION_CURVE[i];
+    if (v <= v1) {
+      const [v0, p0] = LI_ION_CURVE[i - 1];
+      return Math.round(p0 + ((v - v0) / (v1 - v0)) * (p1 - p0));
+    }
+  }
+  return 100;
+}
+
+/**
+ * Decode the newer heartbeat (0x23): terminal info (1), battery voltage in 0.01 V (2, big-endian),
+ * GSM signal (1), language/extension (2). Unlike 0x13 there is no 0–6 level byte, so reading it as
+ * 0x13 turns the voltage's high byte (e.g. 0x01 of 4.05 V = 0x0195) into "level 1" = 5%.
+ */
+export function decodeHeartbeat2(content: Buffer): Gt06Status & { voltage: number | null } {
+  if (content.length < 4) return { batteryLevel: null, gsmSignal: null, charging: null, accOn: null, voltage: null };
+  const info = content[0];
+  const raw = content.readUInt16BE(1);
+  // Plausible single-cell range 2.00–5.00 V; anything else is a firmware variant we don't understand.
+  const voltage = raw >= 200 && raw <= 500 ? raw / 100 : null;
+  return {
+    accOn: (info & 0x02) !== 0,
+    charging: (info & 0x04) !== 0,
+    batteryLevel: voltage === null ? null : batteryPercentFromVolts(voltage),
+    gsmSignal: content[3],
+    voltage,
+  };
+}
+
 /** Status block appended after GPS (18) + LBS (len-prefixed) in alarm packets 0x16 / 0x26. */
 export function decodeAlarmStatus(content: Buffer): Gt06Status | null {
   if (content.length < 18 + 1) return null;

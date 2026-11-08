@@ -12,6 +12,7 @@ import {
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiHeader,
   ApiOkResponse,
   ApiOperation,
   ApiQuery,
@@ -87,6 +88,14 @@ function OdysseyFilters() {
       type: String,
       example: 'NG',
       description: 'All pumps are in Nigeria: NG/NGA/Nigeria returns everything, any other country returns none',
+    }),
+    // Listed like Odyssey's reference spec. The token always travels in this header, never in the URL.
+    // Swagger UI does not send a header parameter named Authorization: use the Authorize button to try calls.
+    ApiHeader({
+      name: 'Authorization',
+      required: true,
+      description: 'Bearer authorization token (set it with the Authorize button to try requests here)',
+      example: 'Bearer dpue_at_xxxxxxxxxxxxxxxxxxxxxxxx',
     }),
   );
 }

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { haversineMeters, isValidCoordinate } from '../common/utils/geo';
@@ -43,7 +44,18 @@ export class LocationsService {
   constructor(
     @InjectRepository(LocationPing) private readonly pings: Repository<LocationPing>,
     @InjectRepository(Device) private readonly devices: Repository<Device>,
+    private readonly config: ConfigService,
   ) {}
+
+  /**
+   * GPS speed is unreliable when the tracker is still: indoors or under cover the position wanders a few metres
+   * and the receiver reports that wobble as 5–10 km/h. Speeds below the threshold are stored as 0.
+   */
+  private cleanSpeed(speedKph: number | null | undefined): number | null {
+    if (speedKph === undefined || speedKph === null) return null;
+    const threshold = this.config.get<number>('tracking.stationarySpeedKph') ?? 0;
+    return speedKph < threshold ? 0 : speedKph;
+  }
 
   findDeviceByImei(imei: string) {
     return this.devices.findOne({ where: { trackerImei: imei }, relations: { farmer: true } });
@@ -111,6 +123,7 @@ export class LocationsService {
     const now = Date.now();
     if (fix.recordedAt.getTime() > now + 10 * 60_000) return { stored: false, reason: 'future_timestamp' };
 
+    const speedKph = this.cleanSpeed(fix.speedKph);
     let distance: number | null = null;
     let within: boolean | null = null;
     const farm = device.farmer;
@@ -128,7 +141,7 @@ export class LocationsService {
         recordedAt: fix.recordedAt,
         latitude: fix.latitude,
         longitude: fix.longitude,
-        speedKph: fix.speedKph ?? null,
+        speedKph,
         course: fix.course ?? null,
         altitude: fix.altitude ?? null,
         satellites: fix.satellites ?? null,
@@ -154,7 +167,7 @@ export class LocationsService {
         lastFixAt: fix.recordedAt,
         lastLatitude: fix.latitude,
         lastLongitude: fix.longitude,
-        lastSpeedKph: fix.speedKph ?? null,
+        lastSpeedKph: speedKph,
         lastDistanceFromFarmMeters: distance,
         lastWithinGeofence: within,
         ...(fix.batteryLevel !== undefined && fix.batteryLevel !== null ? { lastBatteryLevel: fix.batteryLevel } : {}),
