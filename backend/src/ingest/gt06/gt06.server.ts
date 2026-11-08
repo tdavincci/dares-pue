@@ -24,6 +24,7 @@ interface Session {
   buffer: Buffer;
   battery?: number | null;
   remote: string;
+  reportedUnknownData?: boolean;
 }
 
 const MAX_BUFFER = 16 * 1024;
@@ -66,9 +67,16 @@ export class Gt06Server implements OnModuleInit, OnApplicationShutdown {
     this.sockets.add(socket);
     socket.setTimeout(idleMs);
     socket.setKeepAlive(true, 60_000);
+    this.logger.log(`Connection from ${session.remote}`);
     socket.on('timeout', () => socket.destroy());
-    socket.on('error', () => socket.destroy());
-    socket.on('close', () => this.sockets.delete(socket));
+    socket.on('error', (e) => {
+      this.logger.warn(`Socket error from ${session.imei ?? session.remote}: ${e.message}`);
+      socket.destroy();
+    });
+    socket.on('close', () => {
+      this.sockets.delete(socket);
+      this.logger.log(`Disconnected ${session.imei ?? session.remote}${session.imei ? '' : ' (never logged in)'}`);
+    });
 
     // Process chunks sequentially to keep per-device ordering.
     let chain = Promise.resolve();
@@ -88,11 +96,23 @@ export class Gt06Server implements OnModuleInit, OnApplicationShutdown {
       s.buffer = Buffer.alloc(0);
       return;
     }
+    // A tracker speaking another protocol (or plain HTTP from a browser) never sends a GT06 start marker.
+    // Log the first bytes once per connection so the sender can be identified from the server logs.
+    if (!s.imei && !s.reportedUnknownData && s.buffer.length >= 2) {
+      const head = s.buffer.subarray(0, 2).toString('hex');
+      if (head !== '7878' && head !== '7979') {
+        s.reportedUnknownData = true;
+        const sample = s.buffer.subarray(0, 48);
+        this.logger.warn(
+          `Non-GT06 data from ${s.remote}: hex=${sample.toString('hex')} text=${JSON.stringify(sample.toString('latin1'))}`,
+        );
+      }
+    }
     const { frames, rest } = extractFrames(s.buffer);
     s.buffer = rest;
     for (const f of frames) {
       if (!f.crcOk) {
-        this.logger.debug(`Bad CRC from ${s.imei ?? s.remote} (proto 0x${f.protocol.toString(16)})`);
+        this.logger.warn(`Bad CRC from ${s.imei ?? s.remote} (proto 0x${f.protocol.toString(16)})`);
         continue;
       }
       await this.handleFrame(socket, s, f);

@@ -4,7 +4,11 @@
   "scripts": {
     "ng": "ng",
     "start": "NG_BUILD_SASS_EMBEDDED=false ng serve",
+    "start:dev": "NG_BUILD_SASS_EMBEDDED=false ng serve --configuration development",
+    "start:prod": "NG_BUILD_SASS_EMBEDDED=false ng serve --configuration production",
     "build": "NG_BUILD_SASS_EMBEDDED=false ng build",
+    "build:dev": "NG_BUILD_SASS_EMBEDDED=false ng build --configuration development",
+    "build:prod": "NG_BUILD_SASS_EMBEDDED=false ng build --configuration production",
     "watch": "NG_BUILD_SASS_EMBEDDED=false ng build --watch --configuration development",
     "test": "NG_BUILD_SASS_EMBEDDED=false ng test"
   },
