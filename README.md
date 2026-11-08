@@ -70,6 +70,13 @@ cd frontend && npm install && npx ng serve                                  # ht
 To host the API on its own domain, set `apiUrl` in `environment.ts` (e.g. `https://api.dares-pue.org`) and add the
 portal's URL to the backend's `CORS_ORIGINS`.
 
+The portal's Docker image (nginx) reads two optional variables at start-up:
+
+| Variable      | Default               | Purpose                                                              |
+|---------------|-----------------------|----------------------------------------------------------------------|
+| `PORT`        | `80`                  | Port nginx listens on (Railway injects its own).                     |
+| `BACKEND_URL` | `http://backend:3000` | Where nginx forwards `/api` (only used when `apiUrl` is `''`). On Railway set it to the backend's public URL, or leave it: the portal still starts if the host doesn't exist. |
+
 The schema is created by migrations, which run automatically on boot (`DB_RUN_MIGRATIONS=true`). After changing an
 entity, run:
 
