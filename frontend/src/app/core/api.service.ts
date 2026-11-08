@@ -1,5 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
+import { environment } from '../../environments/environment';
 import {
   ApiClient,
   DashboardSummary,
@@ -13,7 +14,9 @@ import {
   User,
 } from './models';
 
-export const API_BASE = '/api/v1';
+/** Backend origin ('' = same origin as the portal). Set in src/environments. */
+export const API_ORIGIN = environment.apiUrl.replace(/\/+$/, '');
+export const API_BASE = `${API_ORIGIN}${environment.apiPrefix}`;
 
 type Query = Record<string, string | number | boolean | null | undefined>;
 

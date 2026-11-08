@@ -10,6 +10,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { debounceTime, distinctUntilChanged, Observable, startWith, switchMap } from 'rxjs';
 import { ApiService } from '../core/api.service';
+import { environment } from '../../environments/environment';
 import { Device, DEVICE_STATUSES, Farmer } from '../core/models';
 import { Notify } from '../core/notify';
 import { LabelPipe } from '../shared/ui';
@@ -115,7 +116,7 @@ export class DeviceFormDialog implements OnInit {
     trackerModel: ['GT06'],
     trackerSimNumber: [''],
     status: ['REGISTERED'],
-    geofenceRadiusMeters: [500, [Validators.required, Validators.min(20)]],
+    geofenceRadiusMeters: [environment.defaultGeofenceRadiusMeters, [Validators.required, Validators.min(20)]],
     installedAt: [null as Date | null],
     financingId: [''],
     reportIntervalMinutes: [1, [Validators.min(1)]],

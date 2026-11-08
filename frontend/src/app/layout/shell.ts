@@ -11,6 +11,7 @@ import { MatToolbarModule } from '@angular/material/toolbar';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { map } from 'rxjs';
 import { AuthService } from '../core/auth';
+import { environment } from '../../environments/environment';
 import { ChangePasswordDialog } from '../pages/users';
 
 interface NavItem {
@@ -39,7 +40,7 @@ interface NavItem {
         <div class="brand">
           <mat-icon class="brand-icon">water_pump</mat-icon>
           <div>
-            <div class="brand-title">DARES PUE</div>
+            <div class="brand-title">{{ appName }}</div>
             <div class="brand-sub">Pump Tracker</div>
           </div>
         </div>
@@ -90,6 +91,7 @@ interface NavItem {
   `,
 })
 export class Shell {
+  readonly appName = environment.appName;
   auth = inject(AuthService);
   private dialog = inject(MatDialog);
   isHandset = toSignal(

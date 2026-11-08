@@ -1,18 +1,19 @@
 import * as L from 'leaflet';
+import { environment } from '../../environments/environment';
 
-/** Default view: Adamawa State, Nigeria. */
-export const DEFAULT_CENTER: L.LatLngExpression = [9.33, 12.4];
-export const DEFAULT_ZOOM = 8;
+/** Default view, from src/environments (Adamawa State, Nigeria by default). */
+export const DEFAULT_CENTER: L.LatLngExpression = environment.map.defaultCenter;
+export const DEFAULT_ZOOM = environment.map.defaultZoom;
 
 export function createMap(el: HTMLElement): L.Map {
   const map = L.map(el, { zoomControl: true }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
-  const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  const osm = L.tileLayer(environment.map.streetTilesUrl, {
     maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors',
+    attribution: environment.map.streetAttribution,
   });
-  const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  const sat = L.tileLayer(environment.map.satelliteTilesUrl, {
     maxZoom: 19,
-    attribution: 'Tiles &copy; Esri',
+    attribution: environment.map.satelliteAttribution,
   });
   osm.addTo(map);
   L.control.layers({ Map: osm, Satellite: sat }, undefined, { position: 'topright' }).addTo(map);

@@ -59,6 +59,17 @@ cd backend && cp .env.example .env && npm install && npm run start:dev      # ht
 cd frontend && npm install && npx ng serve                                  # http://localhost:4200 (proxies /api → :3000)
 ```
 
+### Frontend settings (`frontend/src/environments/`)
+
+| File                         | Used by                                   | Server URL (`apiUrl`)                         |
+|------------------------------|-------------------------------------------|-----------------------------------------------|
+| `environment.development.ts` | `npm start` / `ng serve`                  | `http://localhost:3000`                       |
+| `environment.ts`             | `npm run build` / Docker (production)     | `''` = same domain as the portal (nginx `/api`) |
+| `environment.base.ts`        | both: currency, map centre/tiles, refresh intervals, default geofence radius | n/a |
+
+To host the API on its own domain, set `apiUrl` in `environment.ts` (e.g. `https://api.dares-pue.org`) and add the
+portal's URL to the backend's `CORS_ORIGINS`.
+
 The schema is created by migrations, which run automatically on boot (`DB_RUN_MIGRATIONS=true`). After changing an
 entity, run:
 

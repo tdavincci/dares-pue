@@ -9,7 +9,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatTableModule } from '@angular/material/table';
-import { ApiService } from '../core/api.service';
+import { API_ORIGIN, ApiService } from '../core/api.service';
 import { ApiClient, ApiToken } from '../core/models';
 import { Notify } from '../core/notify';
 import { AgoPipe, ConfirmDialog, Pill, SecretDialog } from '../shared/ui';
@@ -92,7 +92,8 @@ export class ApiClientsPage implements OnInit {
   private api = inject(ApiService);
   private dialog = inject(MatDialog);
   private notify = inject(Notify);
-  origin = window.location.origin;
+  /** Backend origin shown in the Odyssey URLs (the portal's own origin when the API is same-origin). */
+  origin = API_ORIGIN || window.location.origin;
   clients = signal<ApiClient[]>([]);
   cols = ['prefix', 'label', 'exp', 'used', 'act'];
   newName = '';

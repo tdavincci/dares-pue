@@ -8,6 +8,7 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { Router } from '@angular/router';
 import * as L from 'leaflet';
 import { ApiService } from '../core/api.service';
+import { environment } from '../../environments/environment';
 import { MapDevice } from '../core/models';
 import { Notify } from '../core/notify';
 import { COLORS, createMap, deviceColor, escapeHtml } from '../shared/leaflet';
@@ -100,7 +101,7 @@ export class MapPage implements AfterViewInit, OnDestroy {
     this.map = createMap(this.mapEl().nativeElement);
     this.layer.addTo(this.map);
     this.load();
-    this.timer = setInterval(() => this.load(), 30_000);
+    if (environment.refresh.mapMs > 0) this.timer = setInterval(() => this.load(), environment.refresh.mapMs);
   }
 
   ngOnDestroy() {

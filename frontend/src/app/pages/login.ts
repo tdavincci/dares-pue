@@ -8,6 +8,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { Router } from '@angular/router';
 import { AuthService, errorMessage } from '../core/auth';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-login',
@@ -19,7 +20,7 @@ import { AuthService, errorMessage } from '../core/auth';
         <mat-card-content>
           <div class="brand">
             <mat-icon class="logo">water_pump</mat-icon>
-            <h1>DARES PUE Pump Tracker</h1>
+            <h1>{{ appName }} Pump Tracker</h1>
             <p>Sign in to the administration portal</p>
           </div>
           <form [formGroup]="form" (ngSubmit)="submit()">
@@ -54,6 +55,7 @@ import { AuthService, errorMessage } from '../core/auth';
   `,
 })
 export class LoginPage {
+  readonly appName = environment.appName;
   private auth = inject(AuthService);
   private router = inject(Router);
   form = inject(FormBuilder).nonNullable.group({

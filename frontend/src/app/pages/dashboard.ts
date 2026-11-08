@@ -7,6 +7,7 @@ import { MatTableModule } from '@angular/material/table';
 import { RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { ApiService } from '../core/api.service';
+import { environment } from '../../environments/environment';
 import { DashboardSummary, Device } from '../core/models';
 import { Notify } from '../core/notify';
 import { AgoPipe, DistancePipe, GeofencePill } from '../shared/ui';
@@ -38,7 +39,7 @@ import { AgoPipe, DistancePipe, GeofencePill } from '../shared/ui';
           <div><div class="v">{{ s.farmers.total | number }}</div><div class="k">Farmers</div>
           <div class="sub">{{ s.devices.assigned }} pumps assigned</div></div></a>
         <a class="stat" routerLink="/payments"><mat-icon>payments</mat-icon>
-          <div><div class="v">{{ s.payments.amount | currency: 'NGN' : 'symbol-narrow' : '1.0-0' }}</div><div class="k">Collected</div>
+          <div><div class="v">{{ s.payments.amount | currency: currency : 'symbol-narrow' : '1.0-0' }}</div><div class="k">Collected</div>
           <div class="sub">{{ s.payments.paidDevices }} paid · {{ s.payments.unpaidAssignedDevices }} assigned unpaid</div></div></a>
       </div>
     }
@@ -110,11 +111,12 @@ export class DashboardPage implements OnInit, OnDestroy {
   outside = signal<Device[]>([]);
   offline = signal<Device[]>([]);
   cols = ['serial', 'farmer', 'dist', 'seen'];
+  currency = environment.currency;
   private timer?: ReturnType<typeof setInterval>;
 
   ngOnInit() {
     this.load();
-    this.timer = setInterval(() => this.load(), 60_000);
+    if (environment.refresh.dashboardMs > 0) this.timer = setInterval(() => this.load(), environment.refresh.dashboardMs);
   }
   ngOnDestroy() {
     clearInterval(this.timer);

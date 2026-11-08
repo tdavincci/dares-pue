@@ -48,7 +48,7 @@ import { ConfirmDialog, LabelPipe, Pill } from '../shared/ui';
         }
         <mat-form-field><mat-label>Amount</mat-label><span matTextPrefix>₦&nbsp;</span>
           <input matInput type="number" formControlName="amount" [readonly]="device()?.price != null" />
-          @if (device()?.price != null) { <mat-hint>Pump price {{ device()!.price | currency: 'NGN' : 'symbol-narrow' }}</mat-hint> }
+          @if (device()?.price != null) { <mat-hint>Pump price {{ device()!.price | currency: device()!.currency : 'symbol-narrow' }}</mat-hint> }
         </mat-form-field>
         <mat-form-field><mat-label>Method</mat-label>
           <mat-select formControlName="method">@for (m of methods; track m) { <mat-option [value]="m">{{ m | label }}</mat-option> }</mat-select></mat-form-field>
