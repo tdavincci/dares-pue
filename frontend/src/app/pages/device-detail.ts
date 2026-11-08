@@ -1,5 +1,6 @@
 import { CurrencyPipe, DatePipe } from '@angular/common';
-import { AfterViewInit, Component, ElementRef, inject, input, OnDestroy, signal, viewChild } from '@angular/core';
+import { AfterViewInit, Component, DestroyRef, ElementRef, inject, input, OnDestroy, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
@@ -7,11 +8,13 @@ import { MatCardModule } from '@angular/material/card';
 import { MatDialog } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import * as L from 'leaflet';
+import { debounceTime, Subject } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth';
 import { Device, LocationPoint, Payment } from '../core/models';
+import { DevicePatch, LiveService, patchDevice } from '../core/live.service';
 import { Notify } from '../core/notify';
 import { COLORS, createMap, deviceColor } from '../shared/leaflet';
 import { AgoPipe, ConfirmDialog, DeviceStatusPill, DistancePipe, GeofencePill, LabelPipe, OnlinePill, Pill } from '../shared/ui';
@@ -143,6 +146,11 @@ export class DeviceDetailPage implements AfterViewInit, OnDestroy {
   private api = inject(ApiService);
   private dialog = inject(MatDialog);
   private notify = inject(Notify);
+  private live = inject(LiveService);
+  private router = inject(Router);
+  private destroyRef = inject(DestroyRef);
+  private reload$ = new Subject<void>();
+  private fitted = false;
   mapEl = viewChild<ElementRef<HTMLDivElement>>('mapEl');
 
   d = signal<Device | null>(null);
@@ -156,6 +164,48 @@ export class DeviceDetailPage implements AfterViewInit, OnDestroy {
 
   ngAfterViewInit() {
     this.load();
+    this.reload$.pipe(debounceTime(500), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.load());
+    this.live
+      .stream([`device:${this.id()}`])
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((m) => {
+        switch (m.type) {
+          case 'device.live': {
+            const d = this.d();
+            if (d) {
+              this.d.set(patchDevice(d, m.data as DevicePatch));
+              this.draw();
+            }
+            break;
+          }
+          case 'device.position':
+            this.addPoint((m.data as { point: LocationPoint }).point);
+            break;
+          case 'device.changed':
+            if ((m.data as { action: string }).action === 'deleted') {
+              this.notify.ok('This pump was deleted');
+              void this.router.navigate(['/devices']);
+            } else this.reload$.next();
+            break;
+          case 'payment.changed':
+            this.api
+              .payments({ deviceId: this.id(), status: 'COMPLETED', pageSize: 1 })
+              .subscribe((r) => this.payment.set(r.items[0] ?? null));
+            break;
+          default:
+            this.reload$.next(); // resync after a reconnect
+        }
+      });
+  }
+
+  /** Adds a live fix to the track and history table if it falls inside the selected window. */
+  private addPoint(p: LocationPoint) {
+    const from = Date.now() - this.hours() * 3600_000;
+    if (new Date(p.recordedAt).getTime() < from || this.points().some((x) => x.id === p.id)) return;
+    const pts = [...this.points(), p].sort((a, b) => +new Date(a.recordedAt) - +new Date(b.recordedAt));
+    this.points.set(pts);
+    this.pointsDesc.set([...pts].reverse());
+    this.draw();
   }
 
   ngOnDestroy() {
@@ -183,6 +233,7 @@ export class DeviceDetailPage implements AfterViewInit, OnDestroy {
   }
 
   loadHistory() {
+    this.fitted = false;
     const from = new Date(Date.now() - this.hours() * 3600_000).toISOString();
     this.api.deviceHistory(this.id(), { from, limit: 20000 }).subscribe({
       next: (r) => {
@@ -221,7 +272,11 @@ export class DeviceDetailPage implements AfterViewInit, OnDestroy {
         .addTo(this.layer);
       bounds.push([d.lastLatitude, d.lastLongitude]);
     }
-    if (bounds.length) this.map.fitBounds(L.latLngBounds(bounds), { padding: [30, 30], maxZoom: 16 });
+    // Fit once (and when the time window changes); live updates must not reset the user's zoom.
+    if (bounds.length && !this.fitted) {
+      this.map.fitBounds(L.latLngBounds(bounds), { padding: [30, 30], maxZoom: 16 });
+      this.fitted = true;
+    }
   }
 
   edit() {

@@ -1,14 +1,16 @@
 import { CurrencyPipe, DecimalPipe } from '@angular/common';
-import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, DestroyRef, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { RouterLink } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { debounceTime, forkJoin } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { environment } from '../../environments/environment';
 import { DashboardSummary, Device } from '../core/models';
+import { LiveService } from '../core/live.service';
 import { Notify } from '../core/notify';
 import { AgoPipe, DistancePipe, GeofencePill } from '../shared/ui';
 
@@ -107,6 +109,8 @@ import { AgoPipe, DistancePipe, GeofencePill } from '../shared/ui';
 export class DashboardPage implements OnInit, OnDestroy {
   private api = inject(ApiService);
   private notify = inject(Notify);
+  private live = inject(LiveService);
+  private destroyRef = inject(DestroyRef);
   s = signal<DashboardSummary | null>(null);
   outside = signal<Device[]>([]);
   offline = signal<Device[]>([]);
@@ -117,6 +121,12 @@ export class DashboardPage implements OnInit, OnDestroy {
   ngOnInit() {
     this.load();
     if (environment.refresh.dashboardMs > 0) this.timer = setInterval(() => this.load(), environment.refresh.dashboardMs);
+    // Only "headline numbers changed" hints (pump came online, crossed its farm boundary, payment, new pump…).
+    // The timer above still refreshes time-based numbers (pumps going offline, pings in the last 24 h).
+    this.live
+      .stream(['summary'])
+      .pipe(debounceTime(500), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.load());
   }
   ngOnDestroy() {
     clearInterval(this.timer);

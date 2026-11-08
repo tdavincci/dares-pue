@@ -1,4 +1,5 @@
-import { AfterViewInit, Component, computed, ElementRef, inject, OnDestroy, signal, viewChild } from '@angular/core';
+import { AfterViewInit, Component, computed, DestroyRef, ElementRef, inject, OnDestroy, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
@@ -7,9 +8,11 @@ import { MatListModule } from '@angular/material/list';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { Router } from '@angular/router';
 import * as L from 'leaflet';
+import { debounceTime, Subject } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { environment } from '../../environments/environment';
 import { MapDevice } from '../core/models';
+import { DevicePatch, LiveService, patchMapDevice } from '../core/live.service';
 import { Notify } from '../core/notify';
 import { COLORS, createMap, deviceColor, escapeHtml } from '../shared/leaflet';
 import { AgoPipe, DistancePipe } from '../shared/ui';
@@ -78,6 +81,9 @@ export class MapPage implements AfterViewInit, OnDestroy {
   private api = inject(ApiService);
   private notify = inject(Notify);
   private router = inject(Router);
+  private live = inject(LiveService);
+  private destroyRef = inject(DestroyRef);
+  private reload$ = new Subject<void>();
   mapEl = viewChild.required<ElementRef<HTMLDivElement>>('mapEl');
   C = COLORS;
 
@@ -102,6 +108,38 @@ export class MapPage implements AfterViewInit, OnDestroy {
     this.layer.addTo(this.map);
     this.load();
     if (environment.refresh.mapMs > 0) this.timer = setInterval(() => this.load(), environment.refresh.mapMs);
+    this.reload$.pipe(debounceTime(1000), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.load());
+    this.live
+      .stream(['positions'])
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((m) => {
+        if (m.type === 'device.live') this.applyPatch(m.data as DevicePatch);
+        else this.reload$.next(); // pump/farmer added, edited or removed, or the stream reconnected
+      });
+  }
+
+  /** Moves/recolours one marker in place; redraws everything only when the overlays must change. */
+  private applyPatch(p: DevicePatch) {
+    const list = this.devices();
+    const i = list.findIndex((d) => d.id === p.id);
+    if (i < 0) {
+      if (p.latitude !== undefined) this.reload$.next(); // a pump's first ever fix
+      return;
+    }
+    const prev = list[i];
+    const next = patchMapDevice(prev, p);
+    this.devices.set(list.map((d, j) => (j === i ? next : d)));
+    const marker = this.markers.get(next.id);
+    const isVisible = this.visible().some((d) => d.id === next.id);
+    const needsRedraw =
+      !!marker !== isVisible || // the active filter now shows/hides it
+      (isVisible && prev.withinGeofence !== next.withinGeofence) ||
+      (isVisible && next.withinGeofence === false); // the "outside farm" line follows the pump
+    if (needsRedraw) return this.render();
+    if (!marker) return;
+    marker.setLatLng([next.latitude, next.longitude]);
+    marker.setStyle({ fillColor: deviceColor(next) });
+    marker.setPopupContent(this.popup(next));
   }
 
   ngOnDestroy() {

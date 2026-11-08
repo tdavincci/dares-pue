@@ -5,6 +5,7 @@ import { Brackets, DataSource, Repository } from 'typeorm';
 import { Paged } from '../common/dto/pagination.dto';
 import { randomCode } from '../common/utils/crypto';
 import { Device } from '../devices/device.entity';
+import { LiveEventsService } from '../live/live-events.service';
 import { Payment, PaymentStatus, PaymentType } from './payment.entity';
 import { CreatePaymentDto, PaymentQueryDto } from './payments.dto';
 
@@ -14,6 +15,7 @@ export class PaymentsService {
     @InjectRepository(Payment) private readonly repo: Repository<Payment>,
     private readonly ds: DataSource,
     private readonly config: ConfigService,
+    private readonly live: LiveEventsService,
   ) {}
 
   async list(q: PaymentQueryDto): Promise<Paged<Payment>> {
@@ -108,6 +110,7 @@ export class PaymentsService {
         throw new BadRequestException('paidAt cannot be in the future');
       return (await em.getRepository(Payment).save(payment)).id;
     });
+    this.live.paymentChanged(dto.deviceId, id, 'created');
     return this.findOne(id);
   }
 
@@ -115,6 +118,7 @@ export class PaymentsService {
     const p = await this.findOne(id);
     if (p.status === PaymentStatus.REVERSED) throw new BadRequestException('Payment already reversed');
     await this.repo.update(id, { status: PaymentStatus.REVERSED, reversalReason: reason, reversedAt: new Date() });
+    this.live.paymentChanged(p.deviceId, id, 'reversed');
     return this.findOne(id);
   }
 

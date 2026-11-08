@@ -13,6 +13,7 @@ import { buildDataSourceOptions } from './database/data-source';
 import { DevicesModule } from './devices/devices.module';
 import { FarmersModule } from './farmers/farmers.module';
 import { IngestModule } from './ingest/ingest.module';
+import { LiveModule } from './live/live.module';
 import { LocationsModule } from './locations/locations.module';
 import { OdysseyModule } from './odyssey/odyssey.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -35,6 +36,7 @@ class HealthController {
     TypeOrmModule.forRootAsync({ useFactory: () => buildDataSourceOptions() }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
     AuthModule,
+    LiveModule,
     LocationsModule,
     FarmersModule,
     DevicesModule,

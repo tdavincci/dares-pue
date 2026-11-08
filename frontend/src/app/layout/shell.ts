@@ -11,6 +11,7 @@ import { MatToolbarModule } from '@angular/material/toolbar';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { map } from 'rxjs';
 import { AuthService } from '../core/auth';
+import { LiveService } from '../core/live.service';
 import { environment } from '../../environments/environment';
 import { ChangePasswordDialog } from '../pages/users';
 
@@ -62,6 +63,12 @@ interface NavItem {
             <button mat-icon-button (click)="sidenav.toggle()" aria-label="Menu"><mat-icon>menu</mat-icon></button>
           }
           <span class="spacer"></span>
+          @if (live.state() !== 'idle') {
+            <span class="live" [class.on]="live.state() === 'live'"
+                  [attr.title]="live.state() === 'live' ? 'Receiving live updates' : 'Live updates disconnected, retrying'">
+              <span class="dot"></span>{{ live.state() === 'live' ? 'Live' : 'Reconnecting…' }}
+            </span>
+          }
           <button mat-button [matMenuTriggerFor]="userMenu">
             <mat-icon>account_circle</mat-icon>
             {{ auth.user()?.fullName }}
@@ -81,6 +88,9 @@ interface NavItem {
     .nav { width: 248px; border-right: 1px solid var(--mat-sys-outline-variant); }
     .brand { display: flex; gap: 12px; align-items: center; padding: 20px 16px 12px; }
     .brand-icon { font-size: 36px; width: 36px; height: 36px; color: var(--mat-sys-primary); }
+    .live { display: inline-flex; align-items: center; gap: 6px; margin-right: 8px; font: var(--mat-sys-label-medium); color: var(--mat-sys-on-surface-variant); }
+    .live .dot { width: 8px; height: 8px; border-radius: 50%; background: #f9ab00; }
+    .live.on .dot { background: #1e8e3e; box-shadow: 0 0 0 3px rgba(30, 142, 62, 0.2); }
     .brand-title { font: var(--mat-sys-title-medium); font-weight: 600; }
     .brand-sub { font: var(--mat-sys-label-small); color: var(--mat-sys-on-surface-variant); }
     .topbar { position: sticky; top: 0; z-index: 2; background: var(--mat-sys-surface); border-bottom: 1px solid var(--mat-sys-outline-variant); }
@@ -92,6 +102,7 @@ interface NavItem {
 })
 export class Shell {
   readonly appName = environment.appName;
+  readonly live = inject(LiveService);
   auth = inject(AuthService);
   private dialog = inject(MatDialog);
   isHandset = toSignal(

@@ -5,6 +5,7 @@ import { Between, Brackets, Repository } from 'typeorm';
 import { Paged } from '../common/dto/pagination.dto';
 import { generateSecret, sha256 } from '../common/utils/crypto';
 import { Farmer } from '../farmers/farmer.entity';
+import { LiveEventsService } from '../live/live-events.service';
 import { LocationPing } from '../locations/location-ping.entity';
 import { Device, DeviceStatus } from './device.entity';
 import { CreateDeviceDto, DeviceQueryDto, LocationHistoryQueryDto, UpdateDeviceDto } from './devices.dto';
@@ -23,6 +24,7 @@ export class DevicesService {
     @InjectRepository(Farmer) private readonly farmers: Repository<Farmer>,
     @InjectRepository(LocationPing) private readonly pings: Repository<LocationPing>,
     config: ConfigService,
+    private readonly live: LiveEventsService,
   ) {
     this.onlineMinutes = config.get<number>('tracking.onlineThresholdMinutes')!;
     this.defaultRadius = config.get<number>('tracking.defaultGeofenceRadiusMeters')!;
@@ -120,6 +122,7 @@ export class DevicesService {
       ingestKeyHash: sha256(ingestKey),
     });
     const saved = await this.repo.save(device);
+    this.live.deviceChanged(saved.id, 'created');
     // Returned once only: used by HTTP/OsmAnd trackers. GT06 trackers authenticate by IMEI.
     return { device: await this.findOne(saved.id), ingestKey };
   }
@@ -142,6 +145,7 @@ export class DevicesService {
       patch.lastDistanceFromFarmMeters = null;
     }
     await this.repo.update(id, patch);
+    this.live.deviceChanged(id, 'updated');
     return this.findOne(id);
   }
 
@@ -159,6 +163,7 @@ export class DevicesService {
     } catch {
       throw new BadRequestException('Device has payment records; set status to DECOMMISSIONED instead');
     }
+    this.live.deviceChanged(id, 'deleted');
   }
 
   async history(id: string, q: LocationHistoryQueryDto) {

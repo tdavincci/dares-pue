@@ -1,4 +1,5 @@
-import { Component, inject, input, OnInit, signal } from '@angular/core';
+import { Component, DestroyRef, inject, input, OnInit, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
@@ -15,6 +16,7 @@ import { Subject, debounceTime } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth';
 import { Device, DEVICE_STATUSES, UnregisteredTracker } from '../core/models';
+import { DevicePatch, LiveService, patchDevice } from '../core/live.service';
 import { Notify } from '../core/notify';
 import { AgoPipe, DeviceStatusPill, GeofencePill, LabelPipe, OnlinePill, SecretDialog } from '../shared/ui';
 import { DeviceFormDialog, DeviceFormData } from './device-form';
@@ -134,6 +136,10 @@ export class DevicesPage implements OnInit {
   private api = inject(ApiService);
   private dialog = inject(MatDialog);
   private notify = inject(Notify);
+  private live = inject(LiveService);
+  private destroyRef = inject(DestroyRef);
+  private refresh$ = new Subject<void>();
+  private refreshUnknown$ = new Subject<void>();
 
   statuses = DEVICE_STATUSES;
   cols = ['serial', 'farmer', 'status', 'online', 'geo', 'coords', 'battery'];
@@ -155,6 +161,36 @@ export class DevicesPage implements OnInit {
     this.search$.pipe(debounceTime(300)).subscribe(() => this.reload());
     this.reload();
     if (this.auth.canEdit()) this.api.unregistered().subscribe((u) => this.unknown.set(u));
+
+    // Live updates: patch visible rows in place; refetch the current page only when rows were added,
+    // removed or no longer match the active filters.
+    this.refresh$.pipe(debounceTime(1000), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.load());
+    this.refreshUnknown$
+      .pipe(debounceTime(1000), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.api.unregistered().subscribe((u) => this.unknown.set(u)));
+    this.live
+      .stream(['devices'])
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((m) => {
+        if (m.type === 'device.live') this.applyPatch(m.data as DevicePatch);
+        else if (m.type === 'tracker.unregistered') {
+          if (this.auth.canEdit()) this.refreshUnknown$.next();
+        } else {
+          this.refresh$.next(); // device.changed, farmer.changed, resync
+          if (m.type === 'resync' && this.auth.canEdit()) this.refreshUnknown$.next();
+        }
+      });
+  }
+
+  private applyPatch(p: DevicePatch) {
+    const rows = this.rows();
+    const i = rows.findIndex((d) => d.id === p.id);
+    if (i < 0) return; // not on this page
+    const next = patchDevice(rows[i], p);
+    this.rows.set(rows.map((d, j) => (j === i ? next : d)));
+    const leftOnlineFilter = this.onlineF !== '' && String(next.online) !== this.onlineF;
+    const leftGeoFilter = this.geoF !== '' && String(next.lastWithinGeofence) !== this.geoF;
+    if (leftOnlineFilter || leftGeoFilter) this.refresh$.next();
   }
 
   reload() {

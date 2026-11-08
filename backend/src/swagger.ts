@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { DevicesModule } from './devices/devices.module';
 import { FarmersModule } from './farmers/farmers.module';
 import { IngestModule } from './ingest/ingest.module';
+import { LiveModule } from './live/live.module';
 import { ODYSSEY_BEARER } from './odyssey/odyssey.controller';
 import { OdysseyModule } from './odyssey/odyssey.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -59,7 +60,7 @@ export function setupSwagger(app: INestApplication) {
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'admin-jwt')
     .build();
   const adminDoc = SwaggerModule.createDocument(app, adminConfig, {
-    include: [AppModule, AuthModule, FarmersModule, DevicesModule, PaymentsModule, ApiClientsModule, IngestModule],
+    include: [AppModule, AuthModule, FarmersModule, DevicesModule, PaymentsModule, ApiClientsModule, IngestModule, LiveModule],
   });
   SwaggerModule.setup('api/docs', app, adminDoc, {
     jsonDocumentUrl: 'api/docs-json',

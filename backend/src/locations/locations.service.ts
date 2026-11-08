@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { haversineMeters, isValidCoordinate } from '../common/utils/geo';
 import { sha256 } from '../common/utils/crypto';
 import { Device, DeviceStatus } from '../devices/device.entity';
+import { LiveEventsService } from '../live/live-events.service';
 import { LocationPing, LocationSource } from './location-ping.entity';
 
 export interface IncomingFix {
@@ -40,12 +41,24 @@ export interface UnknownTracker {
 export class LocationsService {
   private readonly logger = new Logger(LocationsService.name);
   private readonly unknown = new Map<string, UnknownTracker>();
+  /** Last activity per device seen by this process, to spot offline → online transitions cheaply. */
+  private readonly lastActivity = new Map<string, number>();
 
   constructor(
     @InjectRepository(LocationPing) private readonly pings: Repository<LocationPing>,
     @InjectRepository(Device) private readonly devices: Repository<Device>,
     private readonly config: ConfigService,
+    private readonly live: LiveEventsService,
   ) {}
+
+  /** Records activity and returns true when the device was offline before this message. */
+  private markActive(device: Device): boolean {
+    const now = Date.now();
+    const thresholdMs = (this.config.get<number>('tracking.onlineThresholdMinutes') ?? 30) * 60_000;
+    const last = this.lastActivity.get(device.id) ?? (device.lastSeenAt ? device.lastSeenAt.getTime() : 0);
+    this.lastActivity.set(device.id, now);
+    return now - last > thresholdMs;
+  }
 
   /**
    * GPS speed is unreliable when the tracker is still: indoors or under cover the position wanders a few metres
@@ -90,6 +103,7 @@ export class LocationsService {
     } else {
       this.unknown.set(imei, { imei, source, remoteAddress, firstSeenAt: now, lastSeenAt: now, attempts: 1 });
       this.logger.warn(`Unregistered tracker ${imei} via ${source}${remoteAddress ? ` from ${remoteAddress}` : ''}`);
+      this.live.unregisteredTracker(imei);
     }
     if (this.unknown.size > 1000) {
       const oldest = [...this.unknown.values()].sort((a, b) => +a.lastSeenAt - +b.lastSeenAt)[0];
@@ -102,7 +116,7 @@ export class LocationsService {
   }
 
   forgetUnknown(imei: string) {
-    this.unknown.delete(imei);
+    if (this.unknown.delete(imei)) this.live.unregisteredTracker(imei);
   }
 
   /** Mark a device as seen (heartbeat) without a position. */
@@ -110,6 +124,16 @@ export class LocationsService {
     const patch: Partial<Device> = { lastSeenAt: new Date() };
     if (batteryLevel !== undefined && batteryLevel !== null) patch.lastBatteryLevel = batteryLevel;
     await this.devices.update(device.id, patch);
+    const cameOnline = this.markActive(device);
+    this.live.devicePatch(
+      {
+        id: device.id,
+        lastSeenAt: patch.lastSeenAt!.toISOString(),
+        online: true,
+        ...(patch.lastBatteryLevel !== undefined ? { batteryLevel: patch.lastBatteryLevel } : {}),
+      },
+      { summaryChanged: cameOnline },
+    );
   }
 
   async record(device: Device, fix: IncomingFix, source: LocationSource): Promise<RecordResult> {
@@ -159,7 +183,7 @@ export class LocationsService {
     if (!id) return { stored: false, reason: 'duplicate' };
 
     // Only move the "last known" position forward in time (trackers flush buffered points out of order).
-    await this.devices
+    const advanced = await this.devices
       .createQueryBuilder()
       .update(Device)
       .set({
@@ -182,11 +206,67 @@ export class LocationsService {
       .where('id = :id', { id: device.id })
       .execute();
 
+    this.publishFix(device, String(id), fix, source, speedKph, distance, within, !!advanced.affected);
+
     if (within === false) {
       this.logger.warn(
         `Device ${device.serialNumber} is ${distance} m from its farm (limit ${device.geofenceRadiusMeters} m)`,
       );
     }
     return { stored: true, pingId: String(id), withinGeofence: within, distanceFromFarmMeters: distance };
+  }
+
+  /** Last geofence state per device seen by this process (the cached Device entity can be stale). */
+  private readonly lastWithin = new Map<string, boolean | null>();
+
+  private publishFix(
+    device: Device,
+    pingId: string,
+    fix: IncomingFix,
+    source: LocationSource,
+    speedKph: number | null,
+    distance: number | null,
+    within: boolean | null,
+    advancedLastKnown: boolean,
+  ) {
+    const cameOnline = this.markActive(device);
+    const now = new Date().toISOString();
+    // The detail page gets every stored fix, including late (buffered) ones, for its history table.
+    this.live.devicePosition(device.id, {
+      id: pingId,
+      recordedAt: fix.recordedAt.toISOString(),
+      receivedAt: now,
+      latitude: fix.latitude,
+      longitude: fix.longitude,
+      speedKph,
+      batteryLevel: fix.batteryLevel ?? null,
+      satellites: fix.satellites ?? null,
+      source,
+      distanceFromFarmMeters: distance,
+      withinGeofence: within,
+    });
+    if (!advancedLastKnown) {
+      // An older buffered fix: the last-known position did not change, only "last seen".
+      this.live.devicePatch({ id: device.id, lastSeenAt: now, online: true }, { summaryChanged: cameOnline });
+      return;
+    }
+    const previousWithin = this.lastWithin.has(device.id) ? this.lastWithin.get(device.id) : device.lastWithinGeofence;
+    this.lastWithin.set(device.id, within);
+    this.live.devicePatch(
+      {
+        id: device.id,
+        latitude: fix.latitude,
+        longitude: fix.longitude,
+        lastFixAt: fix.recordedAt.toISOString(),
+        lastSeenAt: now,
+        speedKph,
+        ...(fix.batteryLevel !== undefined && fix.batteryLevel !== null ? { batteryLevel: fix.batteryLevel } : {}),
+        withinGeofence: within,
+        distanceFromFarmMeters: distance,
+        online: true,
+      },
+      // Dashboard counts only change when a pump comes online or crosses its farm boundary.
+      { summaryChanged: cameOnline || previousWithin !== within },
+    );
   }
 }

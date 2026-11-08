@@ -2,12 +2,16 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
 import { Paged, PageQueryDto } from '../common/dto/pagination.dto';
+import { LiveEventsService } from '../live/live-events.service';
 import { Farmer } from './farmer.entity';
 import { CreateFarmerDto, UpdateFarmerDto } from './farmers.dto';
 
 @Injectable()
 export class FarmersService {
-  constructor(@InjectRepository(Farmer) private readonly repo: Repository<Farmer>) {}
+  constructor(
+    @InjectRepository(Farmer) private readonly repo: Repository<Farmer>,
+    private readonly live: LiveEventsService,
+  ) {}
 
   async list(q: PageQueryDto): Promise<Paged<Farmer>> {
     const qb = this.repo
@@ -51,7 +55,7 @@ export class FarmersService {
     if (dto.accountNumber && (await this.repo.exists({ where: { accountNumber: dto.accountNumber } }))) {
       throw new ConflictException('Account number already exists');
     }
-    return this.repo.manager.transaction(async (em) => {
+    const created = await this.repo.manager.transaction(async (em) => {
       const farmer = em.create(Farmer, {
         ...dto,
         accountNumber: dto.accountNumber ?? `TMP-${Date.now()}-${Math.random()}`,
@@ -63,6 +67,8 @@ export class FarmersService {
       }
       return saved;
     });
+    this.live.farmerChanged(created.id, 'created');
+    return created;
   }
 
   async update(id: string, dto: UpdateFarmerDto) {
@@ -76,6 +82,7 @@ export class FarmersService {
     this.assertCoordsPaired(merged);
     delete (merged as Partial<Farmer>).devices;
     await this.repo.save(merged);
+    this.live.farmerChanged(id, 'updated');
     return this.findOne(id);
   }
 
@@ -87,6 +94,7 @@ export class FarmersService {
     } catch {
       throw new BadRequestException('Farmer has payment records and cannot be deleted');
     }
+    this.live.farmerChanged(id, 'deleted');
   }
 
   private assertCoordsPaired(d: { farmLatitude?: number | null; farmLongitude?: number | null }) {
