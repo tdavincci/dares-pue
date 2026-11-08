@@ -1,6 +1,17 @@
 import { ApiProperty, ApiPropertyOptional, ApiSchema } from '@nestjs/swagger';
 import { IsString, MinLength } from 'class-validator';
 
+/** transactionType values accepted by Odyssey's Electricity Payments contract (use exactly as written). */
+export const ODYSSEY_TRANSACTION_TYPES = [
+  'FULL_PAYMENT',
+  'INSTALLMENT_PAYMENT',
+  'NON_CONTRACT_PAYMENT',
+  'DISCOUNT',
+  'REVERSAL',
+  'ENERGY_CREDIT',
+] as const;
+export type OdysseyTransactionType = (typeof ODYSSEY_TRANSACTION_TYPES)[number];
+
 /**
  * Shapes in this file mirror the Odyssey Standard API (OES Standard API v1.0.0) exactly —
  * same schema names, same field names, same types (note latitude/longitude are strings).
@@ -21,12 +32,13 @@ export class OdysseyMeter {
   @ApiProperty({ example: 'PUMP-SPX-000123', description: 'Pump serial number' })
   meterId!: string;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     type: Number,
     format: 'double',
-    description: 'Not applicable to water pump trackers — omitted.',
+    example: 0,
+    description: 'Required by the Meter Metrics contract. Pump GPS trackers do not meter energy, so this is always 0.',
   })
-  energyConsumptionKwh?: number;
+  energyConsumptionKwh!: number;
 
   @ApiPropertyOptional({
     type: Number,
@@ -35,13 +47,13 @@ export class OdysseyMeter {
   })
   energyReadingKwh?: number;
 
-  @ApiPropertyOptional({ type: Number, format: 'int32', example: 15, description: 'Sampling interval of the series' })
-  timeIntervalMinutes?: number;
+  @ApiProperty({ type: Number, format: 'int32', example: 15, description: 'Sampling interval of the series' })
+  timeIntervalMinutes!: number;
 
-  @ApiPropertyOptional({ example: 'DPF-000001' })
-  customerAccountId?: string;
+  @ApiProperty({ example: 'DPF-000001', description: "Farmer account number ('N/A' while the pump is unassigned)" })
+  customerAccountId!: string;
 
-  @ApiPropertyOptional({ example: '+2348031234567' })
+  @ApiPropertyOptional({ example: '+2348031234567', description: 'E.164 when the number can be normalised' })
   customerPhone?: string;
 
   @ApiPropertyOptional({ example: '18234', description: 'Unique ID of this position fix' })
@@ -89,28 +101,34 @@ export class OdysseyMeterResponse {
 
 @ApiSchema({ name: 'Payment' })
 export class OdysseyPayment {
-  @ApiProperty({ example: '2026-02-15T08:30:00.000Z' })
+  @ApiProperty({ example: '2026-02-15T08:30:00.000Z', description: 'UTC time the transaction was registered (ISO 8601)' })
   timestamp!: string;
 
-  @ApiProperty({ example: 450000 })
+  @ApiProperty({
+    example: 450000,
+    description: 'Value of this payment event. REVERSAL events carry the reversed amount as a negative number.',
+  })
   amount!: number;
 
-  @ApiProperty({ example: 'NGN' })
+  @ApiProperty({ example: 'NGN', description: 'ISO 4217 currency code' })
   currency!: string;
 
-  @ApiProperty({ example: 'FULL_PAYMENT' })
-  transactionType!: string;
+  @ApiProperty({ enum: ODYSSEY_TRANSACTION_TYPES, example: 'FULL_PAYMENT' })
+  transactionType!: OdysseyTransactionType;
 
-  @ApiProperty({ example: 'DPUE-20260215-7KQ2M9XA' })
+  @ApiProperty({
+    example: 'DPUE-20260215-7KQ2M9XA',
+    description: 'Unique, persistent transaction ID. A reversal uses the original ID with a "-REV" suffix.',
+  })
   transactionId!: string;
 
-  @ApiPropertyOptional({ example: 'PUMP-SPX-000123' })
+  @ApiPropertyOptional({ example: 'PUMP-SPX-000123', description: 'Pump serial number' })
   serialNumber?: string;
 
-  @ApiPropertyOptional({ example: 'PUMP-SPX-000123' })
+  @ApiPropertyOptional({ example: 'PUMP-SPX-000123', description: 'Same value as meterId in meter readings' })
   meterId?: string;
 
-  @ApiPropertyOptional({ example: '+2348031234567' })
+  @ApiPropertyOptional({ example: '+2348031234567', description: 'E.164 when the number can be normalised' })
   customerPhone?: string;
 
   @ApiPropertyOptional({ example: 'Musa Ibrahim' })
@@ -148,6 +166,15 @@ export class OdysseyPaymentResponse {
 
   @ApiProperty({ type: String, example: '', description: 'Empty string when there are no errors (per Odyssey spec)' })
   errors!: string;
+
+  @ApiPropertyOptional({ type: Number, format: 'int32', example: 0, description: 'Offset of the first payment in this page' })
+  offset?: number;
+
+  @ApiPropertyOptional({ type: Number, format: 'int32', example: 20, description: 'Maximum payments in this page' })
+  pageLimit?: number;
+
+  @ApiPropertyOptional({ type: Number, format: 'int32', example: 2, description: 'Total payments in the requested window' })
+  total?: number;
 }
 
 @ApiSchema({ name: 'TokenRenewalRequest' })
@@ -163,6 +190,11 @@ export class TokenRenewalResponse {
   @ApiProperty({ example: 'dpue_at_…' })
   accessToken!: string;
 
-  @ApiProperty({ type: Number, format: 'int64', example: 86400, description: 'Seconds until the access token expires' })
+  @ApiProperty({
+    type: Number,
+    format: 'int64',
+    example: 86400,
+    description: 'Positive integer: seconds until the access token expires',
+  })
   expiresIn!: number;
 }

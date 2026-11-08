@@ -54,6 +54,8 @@ export default () => ({
      */
     readingIntervalMinutes: int(process.env.ODYSSEY_READING_INTERVAL_MINUTES, 15),
     paymentTransactionType: process.env.ODYSSEY_PAYMENT_TRANSACTION_TYPE ?? 'FULL_PAYMENT',
+    /** REVERSAL events report the reversed amount as a negative number (false = positive amount). */
+    reversalNegativeAmount: bool(process.env.ODYSSEY_REVERSAL_NEGATIVE_AMOUNT, true),
   },
 
   tracking: {

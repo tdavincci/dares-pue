@@ -97,17 +97,33 @@ The Odyssey Standard API was designed for electricity meters. The DARES PUE mapp
 | reading               | one GPS position fix from the pump's tracker                              |
 | `latitude/longitude`  | fix position, as **strings** with 6 decimals (as in Odyssey's schema)     |
 | customer              | farmer: `customerAccountId` = `DPF-000001`, `customerName`, `customerPhone`, `customerCategory` |
-| payment               | full payment for a pump (`transactionType` = `FULL_PAYMENT`)              |
-| energy fields, `rate` | not applicable, so they are omitted                                       |
+| payment               | full payment for a pump (`transactionType` = `FULL_PAYMENT`); a reversal adds a `REVERSAL` event |
+| `energyConsumptionKwh`| required by the Meter Metrics contract; always `0` (trackers don't meter energy) |
+| other energy fields, `rate` | not applicable, so they are omitted                                 |
 
 The endpoints are the same as Odyssey's QA reference server
 (`https://qa-standard-api.odyssey.energy/api/v1/odyssey/standard/swagger-ui`):
 
 | Method | Path                                             | Notes |
 |--------|--------------------------------------------------|-------|
-| GET    | `/api/v1/odyssey/standard/meter/readings`        | `FROM`, `TO` (ISO 8601 UTC, required), `ID`, `offset`, `pageLimit` → `{ readings[], offset, pageLimit, total, errors: [] }` |
-| GET    | `/api/v1/odyssey/standard/electricity/payments`  | `FROM`, `TO`, `ID` (transaction ID, pump serial or IMEI) → `{ payments[], errors: "" }` |
-| POST   | `/api/v1/odyssey/standard/token-renewal`         | `{ refreshToken }` → `{ accessToken, expiresIn }` (optional flow) |
+| GET    | `/api/v1/odyssey/standard/meter/readings`        | `FROM`, `TO` (ISO 8601 UTC, required), `ID`, `offset`, `pageLimit`, `FINANCING_ID`, `SITE_ID`, `COUNTRY` → `{ readings[], offset, pageLimit, total, errors: [] }` |
+| GET    | `/api/v1/odyssey/standard/electricity/payments`  | same parameters; `ID` = transaction ID, pump serial or IMEI → `{ payments[], errors: "", offset, pageLimit, total }` |
+| POST   | `/api/v1/odyssey/standard/token-renewal`         | `{ refreshToken }` → HTTP 200 `{ accessToken, expiresIn }` (Odyssey's optional automatic renewal contract) |
+
+These follow the Electricity Payments, Meter Metrics and Token Renewal pages of Odyssey's Standard API docs:
+
+* **Payments are event history.** Every payment stays in the window it was registered in, even after a reversal. A
+  reversal is a separate `REVERSAL` event at the reversal time, with transactionId `<original>-REV` and a negative
+  amount (`ODYSSEY_REVERSAL_NEGATIVE_AMOUNT=false` sends it positive). Re-pulling a historical window always
+  returns the same rows.
+* `transactionType` only ever uses Odyssey's enum (`FULL_PAYMENT`, `INSTALLMENT_PAYMENT`, `REVERSAL`, …).
+* Phone numbers are sent in E.164 (`+234…`). `FINANCING_ID` filters by the pump's financing ID. `COUNTRY` other than
+  Nigeria returns nothing. `SITE_ID` is accepted but doesn't filter.
+* A 400 still has the dataset's shape: `{ payments: [], errors: "…" }` or `{ readings: [], errors: ["…"] }`.
+* **Automatic token renewal:** in Odyssey, set `tokenRenewalEndpoint` to
+  `https://<your-domain>/api/v1/odyssey/standard/token-renewal` and `tokenRenewalSecret` to a refresh token from
+  **API access → Issue refresh token**. Renewal doesn't rotate the refresh token, and `expiresIn` is always a
+  positive whole number (`ODYSSEY_ACCESS_TOKEN_TTL_SECONDS`, minimum 60).
 
 The schema names (`Meter`, `MeterResponse`, `Payment`, `PaymentResponse`, `TokenRenewalRequest`, `TokenRenewalResponse`)
 and field names match Odyssey's spec exactly. That includes its quirk: `errors` is an array in readings but a
@@ -126,10 +142,9 @@ When `pageLimit` is omitted, everything in the window is returned, capped at `OD
 **To give Odyssey:** the base URL (`https://<your-domain>`), an access token (or a refresh token plus the renewal URL),
 and the Swagger link above.
 
-> The spec was taken from Odyssey's QA server (titled "OES Standard API Test Server"). Their documentation page
-> (`platform.odysseyenergysolutions.com/#/standard-api/docs`) only renders in a browser. Confirm two things with
-> Odyssey before go-live: whether they want a pump-specific path instead of `electricity/payments`, and whether they
-> expect a particular `transactionType` value.
+> Checked against Odyssey's Standard API docs (`platform.odysseyenergysolutions.com/#/standard-api/docs`: Electricity
+> payments, Meter metrics, Token renewal) and the QA server's OpenAPI spec. Still to confirm with your program:
+> which `customerId` they expect (we send the farmer's internal ID) and the `financingId` value for DARES PUE pumps.
 
 ---
 

@@ -77,7 +77,8 @@ export class ApiClientsService {
       .where('c.refreshTokenHash = :h', { h: sha256(refreshToken) })
       .getOne();
     if (!client || !client.isActive) return null;
-    const ttl = this.config.get<number>('odyssey.accessTokenTtlSeconds')!;
+    // Odyssey rejects a zero, negative or fractional expiresIn, so always return a positive whole number.
+    const ttl = Math.max(60, Math.floor(this.config.get<number>('odyssey.accessTokenTtlSeconds') || 86400));
     const { token } = await this.issue(
       client.id,
       TokenKind.RENEWED,
