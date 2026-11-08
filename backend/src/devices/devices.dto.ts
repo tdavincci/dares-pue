@@ -18,6 +18,16 @@ import {
 import { PageQueryDto } from '../common/dto/pagination.dto';
 import { DeviceStatus } from './device.entity';
 
+/** Derived from completed (non-reversed) payments against the pump's price. */
+export enum DevicePaymentStatus {
+  PAID = 'PAID',
+  PARTIAL = 'PARTIAL',
+  /** Assigned to a farmer, nothing paid yet. */
+  UNPAID = 'UNPAID',
+  /** In stock: no farmer and nothing paid. */
+  UNASSIGNED = 'UNASSIGNED',
+}
+
 const toBool = ({ value }: { value: unknown }) =>
   value === undefined || value === '' ? undefined : value === true || value === 'true' || value === '1';
 
@@ -135,6 +145,14 @@ export class DeviceQueryDto extends PageQueryDto {
   @IsOptional()
   @IsUUID()
   farmerId?: string;
+
+  @ApiPropertyOptional({
+    enum: DevicePaymentStatus,
+    description: 'PAID, PARTIAL, UNPAID (assigned, nothing paid) or UNASSIGNED',
+  })
+  @IsOptional()
+  @IsEnum(DevicePaymentStatus)
+  paymentStatus?: DevicePaymentStatus;
 }
 
 export class LocationHistoryQueryDto {

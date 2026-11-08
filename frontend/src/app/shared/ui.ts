@@ -100,6 +100,17 @@ export class GeofencePill {
 }
 
 @Component({
+  selector: 'app-payment-status',
+  imports: [Pill],
+  template: `<app-pill [text]="text()" [tone]="tone()" />`,
+})
+export class PaymentStatusPill {
+  status = input<string | undefined>();
+  text = computed(() => ({ PAID: 'Paid', PARTIAL: 'Part paid', UNPAID: 'Not paid', UNASSIGNED: 'In stock' })[this.status() as 'PAID'] ?? '—');
+  tone = computed(() => ({ PAID: 'good', PARTIAL: 'warn', UNPAID: 'bad', UNASSIGNED: 'muted' } as const)[this.status() as 'PAID'] ?? 'muted');
+}
+
+@Component({
   selector: 'app-online',
   imports: [Pill],
   template: `<app-pill [text]="online() ? 'Online' : 'Offline'" [tone]="online() ? 'good' : 'warn'" />`,

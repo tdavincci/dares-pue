@@ -4,6 +4,8 @@ export type PaymentMethod = 'CASH' | 'BANK_TRANSFER' | 'POS' | 'MOBILE_MONEY' | 
 export type PaymentStatus = 'COMPLETED' | 'REVERSED';
 
 export const DEVICE_STATUSES: DeviceStatus[] = ['REGISTERED', 'ACTIVE', 'SUSPENDED', 'DECOMMISSIONED'];
+export type DevicePaymentStatus = 'PAID' | 'PARTIAL' | 'UNPAID' | 'UNASSIGNED';
+export const DEVICE_PAYMENT_STATUSES: DevicePaymentStatus[] = ['UNPAID', 'PARTIAL', 'PAID', 'UNASSIGNED'];
 export const PAYMENT_METHODS: PaymentMethod[] = ['CASH', 'BANK_TRANSFER', 'POS', 'MOBILE_MONEY', 'CHEQUE', 'OTHER'];
 
 export interface Paged<T> {
@@ -73,6 +75,10 @@ export interface Device {
   notes: string | null;
   online: boolean;
   createdAt: string;
+  /** Present on the pump list. */
+  paymentStatus?: DevicePaymentStatus;
+  amountPaid?: number;
+  lastPaidAt?: string | null;
 }
 
 export interface MapDevice {

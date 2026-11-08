@@ -87,7 +87,7 @@ export class LiveEventsService implements OnModuleDestroy {
 
   /** A payment was recorded or reversed. */
   paymentChanged(deviceId: string, paymentId: string, action: 'created' | 'reversed') {
-    this.emit('payment.changed', [`device:${deviceId}`], { deviceId, paymentId, action });
+    this.emit('payment.changed', ['devices', `device:${deviceId}`], { deviceId, paymentId, action });
     this.summaryDirty = true;
   }
 

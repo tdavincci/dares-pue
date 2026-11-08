@@ -1,3 +1,4 @@
+import { DecimalPipe } from '@angular/common';
 import { Component, DestroyRef, inject, input, OnInit, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
@@ -15,10 +16,10 @@ import { Router } from '@angular/router';
 import { Subject, debounceTime } from 'rxjs';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth';
-import { Device, DEVICE_STATUSES, UnregisteredTracker } from '../core/models';
+import { Device, DEVICE_PAYMENT_STATUSES, DEVICE_STATUSES, UnregisteredTracker } from '../core/models';
 import { DevicePatch, LiveService, patchDevice } from '../core/live.service';
 import { Notify } from '../core/notify';
-import { AgoPipe, DeviceStatusPill, GeofencePill, LabelPipe, OnlinePill, SecretDialog } from '../shared/ui';
+import { AgoPipe, DeviceStatusPill, GeofencePill, LabelPipe, OnlinePill, PaymentStatusPill, SecretDialog } from '../shared/ui';
 import { DeviceFormDialog, DeviceFormData } from './device-form';
 
 export function showIngestKey(dialog: MatDialog, serial: string, key: string) {
@@ -38,7 +39,7 @@ export function showIngestKey(dialog: MatDialog, serial: string, key: string) {
   imports: [
     FormsModule, MatTableModule, MatPaginatorModule, MatFormFieldModule, MatInputModule, MatSelectModule,
     MatButtonModule, MatIconModule, MatProgressBarModule, MatTooltipModule,
-    AgoPipe, LabelPipe, DeviceStatusPill, GeofencePill, OnlinePill,
+    AgoPipe, LabelPipe, DecimalPipe, DeviceStatusPill, GeofencePill, OnlinePill, PaymentStatusPill,
   ],
   template: `
     <div class="head">
@@ -81,6 +82,11 @@ export function showIngestKey(dialog: MatDialog, serial: string, key: string) {
         <mat-select [(ngModel)]="geoF" (ngModelChange)="reload()">
           <mat-option value="">Any</mat-option><mat-option value="true">On farm</mat-option><mat-option value="false">Outside farm</mat-option>
         </mat-select></mat-form-field>
+      <mat-form-field><mat-label>Payment</mat-label>
+        <mat-select [(ngModel)]="payF" (ngModelChange)="reload()">
+          <mat-option value="">Any</mat-option>
+          @for (s of payStatuses; track s) { <mat-option [value]="s"><app-payment-status [status]="s" /></mat-option> }
+        </mat-select></mat-form-field>
     </div>
 
     <div class="table-wrap">
@@ -94,6 +100,15 @@ export function showIngestKey(dialog: MatDialog, serial: string, key: string) {
           </td></ng-container>
         <ng-container matColumnDef="status"><th mat-header-cell *matHeaderCellDef>Status</th>
           <td mat-cell *matCellDef="let d"><app-device-status [status]="d.status" /></td></ng-container>
+        <ng-container matColumnDef="payment"><th mat-header-cell *matHeaderCellDef>Payment</th>
+          <td mat-cell *matCellDef="let d">
+            <app-payment-status [status]="d.paymentStatus" />
+            @if (d.paymentStatus === 'PARTIAL' || (d.paymentStatus === 'UNPAID' && d.price != null)) {
+              <div class="muted">{{ d.amountPaid | number: '1.0-2' }} / {{ d.price | number: '1.0-2' }} {{ d.currency }}</div>
+            } @else if (d.paymentStatus === 'PAID' && d.lastPaidAt) {
+              <div class="muted">{{ d.lastPaidAt | ago }}</div>
+            }
+          </td></ng-container>
         <ng-container matColumnDef="online"><th mat-header-cell *matHeaderCellDef>Signal</th>
           <td mat-cell *matCellDef="let d"><app-online [online]="d.online" /><div class="muted">{{ d.lastSeenAt | ago }}</div></td></ng-container>
         <ng-container matColumnDef="geo"><th mat-header-cell *matHeaderCellDef>Location</th>
@@ -130,6 +145,7 @@ export class DevicesPage implements OnInit {
   // query params (component input binding)
   online = input<string>();
   withinGeofence = input<string>();
+  paymentStatus = input<string>();
 
   auth = inject(AuthService);
   router = inject(Router);
@@ -142,7 +158,7 @@ export class DevicesPage implements OnInit {
   private refreshUnknown$ = new Subject<void>();
 
   statuses = DEVICE_STATUSES;
-  cols = ['serial', 'farmer', 'status', 'online', 'geo', 'coords', 'battery'];
+  cols = ['serial', 'farmer', 'status', 'payment', 'online', 'geo', 'coords', 'battery'];
   rows = signal<Device[]>([]);
   total = signal(0);
   loading = signal(false);
@@ -151,6 +167,8 @@ export class DevicesPage implements OnInit {
   status = '';
   onlineF = '';
   geoF = '';
+  payF = '';
+  payStatuses = DEVICE_PAYMENT_STATUSES;
   page = 1;
   pageSize = 25;
   search$ = new Subject<void>();
@@ -158,6 +176,7 @@ export class DevicesPage implements OnInit {
   ngOnInit() {
     this.onlineF = this.online() ?? '';
     this.geoF = this.withinGeofence() ?? '';
+    this.payF = this.paymentStatus() ?? '';
     this.search$.pipe(debounceTime(300)).subscribe(() => this.reload());
     this.reload();
     if (this.auth.canEdit()) this.api.unregistered().subscribe((u) => this.unknown.set(u));
@@ -176,7 +195,7 @@ export class DevicesPage implements OnInit {
         else if (m.type === 'tracker.unregistered') {
           if (this.auth.canEdit()) this.refreshUnknown$.next();
         } else {
-          this.refresh$.next(); // device.changed, farmer.changed, resync
+          this.refresh$.next(); // device.changed, farmer.changed, payment.changed, resync
           if (m.type === 'resync' && this.auth.canEdit()) this.refreshUnknown$.next();
         }
       });
@@ -201,7 +220,7 @@ export class DevicesPage implements OnInit {
   load() {
     this.loading.set(true);
     this.api
-      .devices({ search: this.search, status: this.status, online: this.onlineF, withinGeofence: this.geoF, page: this.page, pageSize: this.pageSize })
+      .devices({ search: this.search, status: this.status, online: this.onlineF, withinGeofence: this.geoF, paymentStatus: this.payF, page: this.page, pageSize: this.pageSize })
       .subscribe({
         next: (r) => {
           this.rows.set(r.items);

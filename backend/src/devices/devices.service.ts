@@ -8,10 +8,42 @@ import { Farmer } from '../farmers/farmer.entity';
 import { LiveEventsService } from '../live/live-events.service';
 import { LocationPing } from '../locations/location-ping.entity';
 import { Device, DeviceStatus } from './device.entity';
-import { CreateDeviceDto, DeviceQueryDto, LocationHistoryQueryDto, UpdateDeviceDto } from './devices.dto';
+import {
+  CreateDeviceDto,
+  DevicePaymentStatus,
+  DeviceQueryDto,
+  LocationHistoryQueryDto,
+  UpdateDeviceDto,
+} from './devices.dto';
 
 export interface DeviceView extends Device {
   online: boolean;
+}
+
+export interface DevicePaymentSummary {
+  paymentStatus: DevicePaymentStatus;
+  /** Sum of completed (non-reversed) payments. */
+  amountPaid: number;
+  lastPaidAt: Date | null;
+}
+
+const PAID_SUM = `(SELECT COALESCE(SUM(p.amount), 0) FROM payments p WHERE p.device_id = d.id AND p.status = 'COMPLETED')`;
+const HAS_FULL = `EXISTS (SELECT 1 FROM payments p WHERE p.device_id = d.id AND p.status = 'COMPLETED' AND p.payment_type = 'FULL_PAYMENT')`;
+/** SQL for a pump's payment status; mirrors paymentStatusOf(). */
+const PAYMENT_STATUS_SQL = `(CASE
+  WHEN ${HAS_FULL} OR (d.price IS NOT NULL AND ${PAID_SUM} >= d.price) THEN 'PAID'
+  WHEN ${PAID_SUM} > 0 THEN 'PARTIAL'
+  WHEN d.farmer_id IS NULL THEN 'UNASSIGNED'
+  ELSE 'UNPAID' END)`;
+
+export function paymentStatusOf(
+  d: { price: number | null; farmerId: string | null },
+  amountPaid: number,
+  hasFullPayment: boolean,
+): DevicePaymentStatus {
+  if (hasFullPayment || (d.price !== null && amountPaid >= d.price - 0.001)) return DevicePaymentStatus.PAID;
+  if (amountPaid > 0) return DevicePaymentStatus.PARTIAL;
+  return d.farmerId ? DevicePaymentStatus.UNPAID : DevicePaymentStatus.UNASSIGNED;
 }
 
 @Injectable()
@@ -51,6 +83,7 @@ export class DevicesService {
     if (q.online === true) qb.andWhere('d.lastSeenAt >= :cut', { cut: this.onlineCutoff() });
     if (q.online === false) qb.andWhere('(d.lastSeenAt IS NULL OR d.lastSeenAt < :cut)', { cut: this.onlineCutoff() });
     if (q.withinGeofence !== undefined) qb.andWhere('d.lastWithinGeofence = :wg', { wg: q.withinGeofence });
+    if (q.paymentStatus) qb.andWhere(`${PAYMENT_STATUS_SQL} = :ps`, { ps: q.paymentStatus });
     if (q.search) {
       const s = `%${q.search.trim()}%`;
       qb.andWhere(
@@ -64,7 +97,39 @@ export class DevicesService {
       );
     }
     const [items, total] = await qb.getManyAndCount();
-    return { items: items.map((d) => this.view(d)), total, page: q.page, pageSize: q.pageSize };
+    const pay = await this.paymentSummaries(items);
+    return {
+      items: items.map((d) => Object.assign(this.view(d), pay.get(d.id)!)),
+      total,
+      page: q.page,
+      pageSize: q.pageSize,
+    };
+  }
+
+  /** Payment status per pump, in one query. */
+  async paymentSummaries(devices: Device[]): Promise<Map<string, DevicePaymentSummary>> {
+    const rows: { device_id: string; paid: string; has_full: boolean; last_paid_at: Date | null }[] = devices.length
+      ? await this.repo.query(
+          `SELECT device_id, SUM(amount) AS paid, bool_or(payment_type = 'FULL_PAYMENT') AS has_full, MAX(paid_at) AS last_paid_at
+             FROM payments WHERE device_id = ANY($1) AND status = 'COMPLETED' GROUP BY device_id`,
+          [devices.map((d) => d.id)],
+        )
+      : [];
+    const byId = new Map(rows.map((r) => [r.device_id, r]));
+    return new Map(
+      devices.map((d) => {
+        const r = byId.get(d.id);
+        const amountPaid = r ? Number(r.paid) : 0;
+        return [
+          d.id,
+          {
+            paymentStatus: paymentStatusOf(d, amountPaid, !!r?.has_full),
+            amountPaid,
+            lastPaidAt: r?.last_paid_at ?? null,
+          },
+        ];
+      }),
+    );
   }
 
   /** Every non-decommissioned device that has reported at least once — for the map. */
