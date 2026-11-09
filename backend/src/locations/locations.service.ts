@@ -1,7 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { MoreThan, Repository } from 'typeorm';
 import { haversineMeters, isValidCoordinate } from '../common/utils/geo';
 import { sha256 } from '../common/utils/crypto';
 import { Device, DeviceStatus } from '../devices/device.entity';
@@ -36,13 +36,20 @@ export interface UnknownTracker {
   attempts: number;
 }
 
+/** How often pumps that stopped reporting are announced as offline to the portal. */
+const OFFLINE_SWEEP_MS = 30_000;
+
 /** Central write path for tracker positions: validation, geofence verdict, last-known state. */
 @Injectable()
-export class LocationsService {
+export class LocationsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LocationsService.name);
   private readonly unknown = new Map<string, UnknownTracker>();
-  /** Last activity per device seen by this process, to spot offline → online transitions cheaply. */
+  /**
+   * Last activity of every pump currently online, to spot offline → online transitions cheaply and to announce
+   * online → offline ones (nothing arrives when a tracker goes quiet, so a timer checks).
+   */
   private readonly lastActivity = new Map<string, number>();
+  private sweepTimer?: ReturnType<typeof setInterval>;
 
   constructor(
     @InjectRepository(LocationPing) private readonly pings: Repository<LocationPing>,
@@ -51,10 +58,41 @@ export class LocationsService {
     private readonly live: LiveEventsService,
   ) {}
 
+  private get onlineThresholdMs() {
+    return (this.config.get<number>('tracking.onlineThresholdMinutes') ?? 30) * 60_000;
+  }
+
+  async onModuleInit() {
+    // Pumps that were online before a restart still need to be announced when they go quiet.
+    try {
+      const recent = await this.devices.find({
+        select: { id: true, lastSeenAt: true },
+        where: { lastSeenAt: MoreThan(new Date(Date.now() - this.onlineThresholdMs)) },
+      });
+      for (const d of recent) if (d.lastSeenAt && !this.lastActivity.has(d.id)) this.lastActivity.set(d.id, d.lastSeenAt.getTime());
+    } catch (e) {
+      this.logger.warn(`Could not load online pumps: ${(e as Error).message}`);
+    }
+    this.sweepTimer = setInterval(() => this.sweepOffline(), OFFLINE_SWEEP_MS);
+  }
+
+  onModuleDestroy() {
+    clearInterval(this.sweepTimer);
+  }
+
+  /** Tells the portal about pumps whose last report is now older than the online threshold. */
+  sweepOffline(now = Date.now()) {
+    for (const [id, last] of this.lastActivity) {
+      if (now - last <= this.onlineThresholdMs) continue;
+      this.lastActivity.delete(id);
+      this.live.devicePatch({ id, online: false }, { summaryChanged: true });
+    }
+  }
+
   /** Records activity and returns true when the device was offline before this message. */
   private markActive(device: Device): boolean {
     const now = Date.now();
-    const thresholdMs = (this.config.get<number>('tracking.onlineThresholdMinutes') ?? 30) * 60_000;
+    const thresholdMs = this.onlineThresholdMs;
     const last = this.lastActivity.get(device.id) ?? (device.lastSeenAt ? device.lastSeenAt.getTime() : 0);
     this.lastActivity.set(device.id, now);
     return now - last > thresholdMs;

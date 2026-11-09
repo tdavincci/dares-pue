@@ -7,15 +7,23 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { Clock } from '../core/clock';
 
-/** "3 min ago" style relative time. */
-@Pipe({ name: 'ago' })
+/**
+ * "3 min ago" style relative time that keeps itself current: it reads the shared Clock (ticks every 10 s), so
+ * the text updates without reloading the page. Impure so it re-runs when the clock ticks; it's cheap arithmetic.
+ */
+@Pipe({ name: 'ago', pure: false })
 export class AgoPipe implements PipeTransform {
+  private clock = inject(Clock);
+
   transform(value: string | Date | null | undefined): string {
+    const now = this.clock.now(); // read first, so the template re-renders on every tick
     if (!value) return 'never';
-    const s = Math.round((Date.now() - new Date(value).getTime()) / 1000);
-    if (s < 0) return 'just now';
-    if (s < 60) return `${s}s ago`;
+    const s = Math.floor((now - new Date(value).getTime()) / 1000);
+    if (s < 10) return 'just now';
+    // Whole 10 s steps, in line with the clock, so the number doesn't look stuck between ticks.
+    if (s < 60) return `${Math.floor(s / 10) * 10}s ago`;
     if (s < 3600) return `${Math.floor(s / 60)} min ago`;
     if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
     return `${Math.floor(s / 86400)} d ago`;
