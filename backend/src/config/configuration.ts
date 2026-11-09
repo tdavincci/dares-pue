@@ -48,8 +48,15 @@ export default () => ({
     maxPageLimit: int(process.env.ODYSSEY_MAX_PAGE_LIMIT, 5000),
     /** Days of Odyssey request history kept for the API access page. 0 = keep forever. */
     accessLogRetentionDays: int(process.env.ODYSSEY_ACCESS_LOG_RETENTION_DAYS, 90),
-    /** Odyssey states it never requests more than 24h; we reject anything larger than this. */
-    maxRangeHours: int(process.env.ODYSSEY_MAX_RANGE_HOURS, 744),
+    /**
+     * Widest FROM–TO window Odyssey may request. Routine syncs ask for ~24h; the larger limit allows history
+     * backfills. 184 days is the longest any 6 calendar months can be. 0 = no limit.
+     * ODYSSEY_MAX_RANGE_HOURS (the old setting) is still honoured when the days setting is not set.
+     */
+    maxRangeDays:
+      process.env.ODYSSEY_MAX_RANGE_DAYS === undefined && process.env.ODYSSEY_MAX_RANGE_HOURS !== undefined
+        ? int(process.env.ODYSSEY_MAX_RANGE_HOURS, 0) / 24
+        : int(process.env.ODYSSEY_MAX_RANGE_DAYS, 184),
     /**
      * Trackers can report every few seconds. Readings sent to Odyssey are down-sampled to
      * one point per device per bucket (latest point wins). 0 = send raw points.

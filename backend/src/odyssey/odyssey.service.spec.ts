@@ -28,6 +28,21 @@ describe('OdysseyService.parseRange', () => {
   ])('rejects %j', (q) => {
     expect(() => svc.parseRange(q)).toThrow(BadRequestException);
   });
+
+  it('accepts any 6 calendar months, including the longest (Jul–Jan, 184 days)', () => {
+    expect(() => svc.parseRange({ from: '2026-07-01T00:00:00Z', to: '2027-01-01T00:00:00Z' })).not.toThrow();
+  });
+
+  it('rejects a window longer than 6 months', () => {
+    let err: BadRequestException | undefined;
+    try {
+      svc.parseRange({ from: '2026-01-01T00:00:00Z', to: '2026-07-05T00:00:00Z' });
+    } catch (e) {
+      err = e as BadRequestException;
+    }
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect(err!.getResponse()).toMatchObject({ errors: ['Requested range exceeds the maximum of 184 days'] });
+  });
 });
 
 describe('haversineMeters', () => {

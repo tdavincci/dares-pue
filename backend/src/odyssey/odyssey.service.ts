@@ -66,9 +66,10 @@ export class OdysseyService {
     const to = new Date(q.to!);
     if (isNaN(+from) || isNaN(+to)) throw invalid(dataset, ['FROM/TO are not valid dates']);
     if (from > to) throw invalid(dataset, ['FROM must be earlier than or equal to TO']);
-    const maxHours = this.config.get<number>('odyssey.maxRangeHours')!;
-    if (maxHours > 0 && (+to - +from) / 3600_000 > maxHours) {
-      throw invalid(dataset, [`Requested range exceeds the maximum of ${maxHours} hours`]);
+    const maxDays = this.config.get<number>('odyssey.maxRangeDays')!;
+    if (maxDays > 0 && (+to - +from) / 86400_000 > maxDays) {
+      const shown = Number.isInteger(maxDays) ? maxDays : maxDays.toFixed(1);
+      throw invalid(dataset, [`Requested range exceeds the maximum of ${shown} days`]);
     }
     return { from, to };
   }
