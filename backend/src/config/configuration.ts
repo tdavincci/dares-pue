@@ -5,13 +5,23 @@ const int = (v: string | undefined, def: number) => {
   return Number.isFinite(n) ? n : def;
 };
 
+/**
+ * Parses CORS_ORIGINS: `*` (the default) allows any website to call the API, or list the allowed ones,
+ * e.g. "https://a.example,https://b.example". Browsers send the Origin as scheme://host[:port] with no path or
+ * trailing slash, so surrounding quotes, spaces and trailing slashes are dropped to make small typos still match.
+ * Allowing every origin is safe here because logins use Bearer tokens, not cookies (credentials are off).
+ */
+export function parseCorsOrigins(raw: string | undefined): string[] {
+  return (raw === undefined || raw.trim() === '' ? '*' : raw)
+    .split(/[,\s]+/)
+    .map((s) => s.trim().replace(/^['"]+|['"]+$/g, '').replace(/\/+$/, ''))
+    .filter(Boolean);
+}
+
 export default () => ({
   env: process.env.NODE_ENV ?? 'development',
   port: int(process.env.PORT, 3000),
-  corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:4200')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean),
+  corsOrigins: parseCorsOrigins(process.env.CORS_ORIGINS),
 
   db: {
     /**

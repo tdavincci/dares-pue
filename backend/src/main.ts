@@ -12,7 +12,9 @@ async function bootstrap() {
 
   app.set('trust proxy', 1);
   app.use(helmet({ contentSecurityPolicy: false }));
-  app.enableCors({ origin: config.get<string[]>('corsOrigins'), credentials: false });
+  const corsOrigins = config.get<string[]>('corsOrigins')!;
+  // '*' reflects whichever site is calling; otherwise only the listed sites may call from a browser.
+  app.enableCors({ origin: corsOrigins.includes('*') ? true : corsOrigins, credentials: false });
   app.setGlobalPrefix('api/v1');
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidUnknownValues: false }));
   app.enableShutdownHooks();
@@ -23,6 +25,7 @@ async function bootstrap() {
   await app.listen(port, '0.0.0.0');
   const log = new Logger('Bootstrap');
   log.log(`HTTP API on http://localhost:${port}/api/v1`);
+  log.log(`CORS allowed origins:  ${corsOrigins.includes('*') ? 'any (*)' : corsOrigins.join(', ') || '(none)'}`);
   log.log(`Admin API docs:        http://localhost:${port}/api/docs`);
   log.log(`Odyssey Standard docs: http://localhost:${port}/api/v1/odyssey/standard/swagger-ui`);
 }
