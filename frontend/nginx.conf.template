@@ -31,9 +31,16 @@ server {
     try_files $uri $uri/ /index.html;
   }
 
-  location ~* \.(js|css|woff2?|png|svg|ico)$ {
+  # Angular's JS/CSS/fonts have a content hash in their names, so they never change: cache for good.
+  location ~* \.(js|css|woff2?)$ {
     expires 30d;
     add_header Cache-Control "public, immutable";
+    try_files $uri =404;
+  }
+
+  # Icons and images keep the same name when replaced: cache briefly, then check for a new version.
+  location ~* \.(png|svg|ico|webmanifest)$ {
+    add_header Cache-Control "public, max-age=3600, must-revalidate";
     try_files $uri =404;
   }
 }
