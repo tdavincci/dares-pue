@@ -6,6 +6,7 @@ import {
   HttpCode,
   Post,
   Query,
+  Req,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
@@ -20,7 +21,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
-import { ApiClientsService } from '../api-clients/api-clients.service';
+import { ApiClientsService, ValidatedClient } from '../api-clients/api-clients.service';
 import { ApiTokenGuard } from '../api-clients/api-token.guard';
 import {
   OdysseyMeterResponse,
@@ -188,9 +189,13 @@ export class OdysseyController {
   })
   @ApiOkResponse({ type: TokenRenewalResponse })
   @ApiUnauthorizedResponse({ description: 'Invalid refresh token' })
-  async renew(@Body() body: TokenRenewalRequest): Promise<TokenRenewalResponse> {
+  async renew(
+    @Body() body: TokenRenewalRequest,
+    @Req() req: { apiClient?: Partial<ValidatedClient> },
+  ): Promise<TokenRenewalResponse> {
     const res = await this.clients.renew(body.refreshToken);
     if (!res) throw new UnauthorizedException('Invalid refresh token');
-    return res;
+    req.apiClient = res.client; // identifies the caller in the access history
+    return res.response;
   }
 }

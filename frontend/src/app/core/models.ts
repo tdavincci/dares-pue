@@ -159,6 +159,27 @@ export interface ApiClient {
   createdAt: string;
 }
 
+/** One request Odyssey (or another API client) made to the Standard API. */
+export interface ApiAccessLog {
+  id: string;
+  createdAt: string;
+  clientId: string | null;
+  clientName: string | null;
+  tokenPrefix: string | null;
+  method: string;
+  endpoint: 'readings' | 'payments' | 'token-renewal';
+  url: string;
+  statusCode: number;
+  success: boolean;
+  recordCount: number | null;
+  total: number | null;
+  summary: string;
+  error: string | null;
+  durationMs: number;
+  ip: string | null;
+  userAgent: string | null;
+}
+
 export interface UnregisteredTracker {
   imei: string;
   source: string;

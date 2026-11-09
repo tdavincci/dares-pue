@@ -4,7 +4,7 @@ import { API_BASE } from './api.service';
 import { AuthService } from './auth';
 
 /** Topics match the backend (backend/src/live/live-events.service.ts). Subscribe only to what the page shows. */
-export type LiveTopic = 'summary' | 'positions' | 'devices' | `device:${string}`;
+export type LiveTopic = 'summary' | 'positions' | 'devices' | 'api' | `device:${string}`;
 
 /**
  * Messages delivered to a page. `resync` is emitted after the stream reconnects: events sent while it was
@@ -20,6 +20,7 @@ export interface LiveMessage<T = any> {
     | 'payment.changed'
     | 'farmer.changed'
     | 'summary.changed'
+    | 'api.access'
     | string;
   data: T;
 }

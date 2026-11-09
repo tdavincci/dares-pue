@@ -4,13 +4,14 @@ import 'dotenv/config';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import configuration from '../config/configuration';
 import { ApiAccessToken, ApiClient } from '../api-clients/api-client.entity';
+import { ApiAccessLog } from '../api-clients/api-access-log.entity';
 import { Device } from '../devices/device.entity';
 import { Farmer } from '../farmers/farmer.entity';
 import { LocationPing } from '../locations/location-ping.entity';
 import { Payment } from '../payments/payment.entity';
 import { User } from '../users/user.entity';
 
-export const ENTITIES = [User, Farmer, Device, LocationPing, Payment, ApiClient, ApiAccessToken];
+export const ENTITIES = [User, Farmer, Device, LocationPing, Payment, ApiClient, ApiAccessToken, ApiAccessLog];
 
 export function buildDataSourceOptions(): DataSourceOptions {
   const { db } = configuration();

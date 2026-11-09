@@ -7,8 +7,9 @@ import { Observable, Subject } from 'rxjs';
  *  - `positions`    live map: last-known position/status patches for every pump (coalesced per pump)
  *  - `devices`      pump & tracker list: row patches, pump created/updated/deleted, unregistered trackers
  *  - `device:<id>`  one pump's detail page: its patches, every new position fix, its payments
+ *  - `api`          API access page: a request to the Odyssey API was recorded
  */
-export type LiveTopic = 'summary' | 'positions' | 'devices' | `device:${string}`;
+export type LiveTopic = 'summary' | 'positions' | 'devices' | 'api' | `device:${string}`;
 
 export interface LiveEvent {
   type: string;
@@ -95,6 +96,11 @@ export class LiveEventsService implements OnModuleDestroy {
   farmerChanged(farmerId: string, action: 'created' | 'updated' | 'deleted') {
     this.emit('farmer.changed', ['devices', 'positions'], { id: farmerId, action });
     this.summaryDirty = true;
+  }
+
+  /** A request to the Odyssey API was recorded in the access history. */
+  apiAccess(data: { id: string; clientId: string | null; success: boolean }) {
+    this.emit('api.access', ['api'], data);
   }
 
   private emit(type: string, topics: string[], data: unknown) {

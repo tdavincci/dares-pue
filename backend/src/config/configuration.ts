@@ -46,6 +46,8 @@ export default () => ({
     /** Default page size when Odyssey does not send pageLimit. 0 = return everything in the window. */
     defaultPageLimit: int(process.env.ODYSSEY_DEFAULT_PAGE_LIMIT, 0),
     maxPageLimit: int(process.env.ODYSSEY_MAX_PAGE_LIMIT, 5000),
+    /** Days of Odyssey request history kept for the API access page. 0 = keep forever. */
+    accessLogRetentionDays: int(process.env.ODYSSEY_ACCESS_LOG_RETENTION_DAYS, 90),
     /** Odyssey states it never requests more than 24h; we reject anything larger than this. */
     maxRangeHours: int(process.env.ODYSSEY_MAX_RANGE_HOURS, 744),
     /**

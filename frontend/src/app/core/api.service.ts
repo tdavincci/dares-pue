@@ -2,6 +2,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { environment } from '../../environments/environment';
 import {
+  ApiAccessLog,
   ApiClient,
   DashboardSummary,
   Device,
@@ -111,6 +112,9 @@ export class ApiService {
   }
   revokeToken(id: string, tokenId: string) {
     return this.http.delete<void>(this.url(`/admin/api-clients/${id}/tokens/${tokenId}`));
+  }
+  apiAccessLog(q: Query) {
+    return this.http.get<Paged<ApiAccessLog>>(this.url('/admin/api-clients/access-log'), { params: params(q) });
   }
   issueRefreshToken(id: string) {
     return this.http.post<{ refreshToken: string }>(this.url(`/admin/api-clients/${id}/refresh-token`), {});

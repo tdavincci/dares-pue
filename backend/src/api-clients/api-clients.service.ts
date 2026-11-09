@@ -9,6 +9,7 @@ export interface ValidatedClient {
   clientId: string;
   clientName: string;
   tokenId: string;
+  tokenPrefix: string;
 }
 
 @Injectable()
@@ -70,7 +71,10 @@ export class ApiClientsService {
     if (!res.affected) throw new NotFoundException('Token not found or already revoked');
   }
 
-  /** Exchange a refresh token for a short-lived access token. Returns null if the refresh token is invalid. */
+  /**
+   * Exchange a refresh token for a short-lived access token. Returns null if the refresh token is invalid.
+   * `client` identifies the caller for the access history; only `accessToken`/`expiresIn` go to Odyssey.
+   */
   async renew(refreshToken: string) {
     const client = await this.clients
       .createQueryBuilder('c')
@@ -91,7 +95,10 @@ export class ApiClientsService {
       .delete()
       .where('client_id = :cid AND kind = :k AND expires_at < now()', { cid: client.id, k: TokenKind.RENEWED })
       .execute();
-    return { accessToken: token, expiresIn: ttl };
+    return {
+      response: { accessToken: token, expiresIn: ttl },
+      client: { clientId: client.id, clientName: client.name },
+    };
   }
 
   async validate(rawToken: string): Promise<ValidatedClient | null> {
@@ -108,7 +115,7 @@ export class ApiClientsService {
       void this.tokens.update(t.id, { lastUsedAt: now });
       void this.clients.update(t.clientId, { lastUsedAt: now });
     }
-    return { clientId: t.clientId, clientName: t.client.name, tokenId: t.id };
+    return { clientId: t.clientId, clientName: t.client.name, tokenId: t.id, tokenPrefix: t.tokenPrefix };
   }
 
   private async issue(clientId: string, kind: TokenKind, expiresAt: Date | null, label: string | null) {

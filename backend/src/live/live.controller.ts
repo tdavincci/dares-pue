@@ -6,7 +6,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { LiveEventsService } from './live-events.service';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const STATIC_TOPICS = new Set(['summary', 'positions', 'devices']);
+const STATIC_TOPICS = new Set(['summary', 'positions', 'devices', 'api']);
 /** Keep-alive so proxies (Railway, nginx) don't close an idle stream. */
 const PING_MS = 25_000;
 /** Streams end after this long; the portal reconnects, which re-checks the login token. */
